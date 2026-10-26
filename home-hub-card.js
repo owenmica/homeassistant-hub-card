@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -22,6 +22,7 @@ const DEFAULTS = {
   climate: [],
   lights: [],
   media: [],
+  music: null,
   garage: null,
   outdoor_garage: null,
   seasons: { halloween: ['10-24', '11-01'], christmas: ['12-01', '01-06'] }
@@ -52,6 +53,7 @@ const ICON = {
   pause: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
   prev: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M6 5h2v14H6zM9.5 12L19 5v14z"/></svg>',
   next: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M16 5h2v14h-2zM14.5 12L5 19V5z"/></svg>',
+  note: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
   speaker: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
   spa: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 16c2 0 2-1.5 4-1.5S9 16 11 16s2-1.5 4-1.5S17 16 19 16s2-1.5 2-1.5M3 20c2 0 2-1.5 4-1.5S9 20 11 20s2-1.5 4-1.5S17 20 19 20M8 11c0-2 2-2 2-4M12 11c0-2 2-2 2-4M16 11c0-2 2-2 2-4"/></svg>'
 };
@@ -130,6 +132,21 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .tile.on-media{background:#1E3048;color:#F5F5F7}.tile.on-media .fillbar{background:#3F7FCC}.tile.on-media .st{color:#E6EEF8}
 .tile.on-media .pw{background:rgba(0,0,0,.2);color:inherit}
 .tile .lvl{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile.mus{grid-column:span 2;flex-direction:row;align-items:center;gap:14px;padding:14px}
+.mus .art{width:84px;height:84px;border-radius:16px;flex:none;background:#2C2C34 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#8E8E93;position:relative}
+.mus .body{flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center}
+.mus .nm,.mus .st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mus .mini{display:flex;gap:6px;flex:none}.mus .mini button{border:none;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.1);color:inherit;display:flex;align-items:center;justify-content:center}
+.mus .mini button.pp{background:#8EC1FF;color:#08121F}
+.sheet.wide{width:min(860px,100%);max-height:92%}
+.libgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;overflow-y:auto;max-height:430px;-webkit-overflow-scrolling:touch;padding-right:4px}
+.libit{border:none;background:none;color:#F5F5F7;text-align:left;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;line-height:1.25}
+.libit .im{width:100%;padding-top:100%;border-radius:12px;background:#2C2C34 center/cover no-repeat}
+.libit.round .im{border-radius:50%}
+.libit span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.libit small{color:#8E8E93;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srch{display:flex;gap:10px}.srch input{flex:1;min-width:0;border:none;border-radius:14px;background:#2C2C34;color:#F5F5F7;font:inherit;font-size:16px;padding:12px 16px}
+.libmsg{color:#8E8E93;font-size:15px;padding:20px 0}
 .mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
 .mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
@@ -218,6 +235,13 @@ class HomeHubCard extends HTMLElement {
     this.$sleep.addEventListener('pointerdown', () => { lp = setTimeout(() => { lp = null; this._toggleKiosk(); }, 2500); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$sleep.addEventListener(ev, () => { if (lp) clearTimeout(lp); lp = null; }));
     this.$awake.addEventListener('click', (e) => this._onClick(e));
+    this.$awake.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target; if (!f || f.dataset.form !== 'lib') return;
+      const inp = f.querySelector('input'); const q = (inp.value || '').trim(); inp.blur();
+      this._loadLib(this._lib && this._lib.type !== 'favorite' ? this._lib.type : 'track', q);
+      this._render();
+    });
     this.$awake.addEventListener('input', (e) => this._onInput(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onSlideStart(e));
     this.$awake.addEventListener('pointermove', (e) => this._onSlideMove(e));
@@ -374,7 +398,8 @@ class HomeHubCard extends HTMLElement {
     this.$sleep.classList.toggle('hidden', this._awake);
     this.$awake.classList.toggle('hidden', !this._awake);
     if (!this._awake) { this._renderScene(now); return; }
-    if (this._ptr || this._slide || this.$awake.querySelector('.hold.pressing')) { this._pending = true; return; }
+    const ae = (this.shadowRoot && this.shadowRoot.activeElement) || document.activeElement;
+    if (this._ptr || this._slide || this.$awake.querySelector('.hold.pressing') || (ae && ae.dataset && ae.dataset.in === 'libq')) { this._pending = true; return; }
     const html = this._dash(now);
     if (html !== this._lastHtml) { this._lastHtml = html; this.$awake.innerHTML = '<div class="dz">' + html + '</div>'; this._fitDash(); }
   }
@@ -422,6 +447,18 @@ class HomeHubCard extends HTMLElement {
       const st = !on ? (s.state === 'unavailable' ? 'Unavailable' : 'Off') : (s.attributes.media_title ? s.attributes.media_title : cap(s.state)) + (vol != null ? ' · ' + vol + '%' : '');
       return `<div class="tile stile ${on ? 'on-media' : ''}" ${on && vol != null ? `data-slide="media" data-i="${i}"` : ''}><div class="fillbar" style="width:${on && vol != null ? vol : 0}%"></div><button class="pw" data-act="mplay" data-i="${i}" aria-label="${playing ? 'Pause' : 'Play'} ${m.name}">${!on ? ICON.power : playing ? ICON.pause : ICON.play}</button><button class="body" data-act="msheet" data-i="${i}"><div class="nm">${m.name}</div><div class="st" data-lvl>${st}</div></button></div>`;
     }).join('');
+    let music = '';
+    if (c.music && this._st(c.music.entity)) {
+      const s = this._st(c.music.entity), a = s.attributes;
+      const on = !['off', 'unavailable', 'unknown', 'standby'].includes(s.state);
+      const vol = a.volume_level != null ? Math.round(a.volume_level * 100) : null;
+      const pic = a.entity_picture || '';
+      const sub = a.media_title ? [a.media_title, a.media_artist].filter(Boolean).join(' · ') : (on ? 'Tap to browse your music' : 'Off · tap to browse');
+      music = `<div class="tile stile mus ${on ? 'on-media' : ''}" ${on && vol != null ? 'data-slide="music"' : ''}><div class="fillbar" style="width:${on && vol != null ? vol : 0}%"></div>
+        <div class="art" style="${pic ? `background-image:url('${pic.replace(/'/g, '%27')}')` : ''}">${pic ? '' : ICON.note}</div>
+        <button class="body" data-act="browse"><div class="nm">${c.music.name || 'Music'}</div><div class="st">${sub}</div>${vol != null && on ? `<div class="st lvl" data-lvl>${vol}%</div>` : '<div class="st" data-lvl></div>'}</button>
+        <div class="mini"><button data-act="musprev" aria-label="Previous">${ICON.prev}</button><button class="pp" data-act="musplay" aria-label="Play or pause">${s.state === 'playing' ? ICON.pause : ICON.play}</button><button data-act="musnext" aria-label="Next">${ICON.next}</button></div></div>`;
+    }
     const g = this._st(c.garage), og = this._st(c.outdoor_garage);
     const gs = g ? g.state : 'unknown';
     const gOpen = ['open', 'opening'].includes(gs);
@@ -431,6 +468,7 @@ class HomeHubCard extends HTMLElement {
     if (this._sheet === 'scene') sheet = this._sceneSheet();
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'M') sheet = this._mediaSheet(+this._sheet.slice(1));
+    else if (this._sheet === 'B') sheet = this._browseSheet();
     else if (this._sheet != null) sheet = this._sheetHtml(this._sheet);
 
     return `
@@ -460,7 +498,7 @@ class HomeHubCard extends HTMLElement {
   <div class="col">
     <div class="sec">Climate</div><div class="tiles t4">${climate}</div>
     <div class="sec">Lights</div><div class="tiles t5">${lights}</div>
-    ${media ? `<div class="sec">Media</div><div class="tiles t4">${media}</div>` : ''}
+    ${media || music ? `<div class="sec">Media</div><div class="tiles t4">${music}${media}</div>` : ''}
     ${c.garage ? `<div class="sec">Garage</div>
     <div class="garage">
       <div class="tile gtile"><div class="tophead"><span class="ic" style="color:${gOpen ? '#FFB340' : '#34C759'}">${ICON.garage}</span><button class="gbtn" data-act="garage">${gOpen ? 'Close' : 'Open'}</button></div>
@@ -516,8 +554,47 @@ class HomeHubCard extends HTMLElement {
       <div class="chips"><button class="chip ${a.is_volume_muted ? 'sel' : ''}" data-act="mmute" data-i="${i}">${a.is_volume_muted ? 'Muted' : 'Mute'}</button></div>` : ''}
     </div></div>`;
   }
+  _img(u) {
+    if (!u) return '';
+    if (u.indexOf('mzstatic.com') > -1) u = u.replace(/\/\d{3,4}x\d{3,4}/, '/240x240');
+    return u.replace(/'/g, '%27');
+  }
+  _loadLib(type, q) {
+    const c = this.config.music; if (!c) return;
+    const tok = (this._libTok || 0) + 1; this._libTok = tok;
+    this._lib = { type, q: q || '', items: null, err: '' };
+    const data = { config_entry_id: c.config_entry_id, media_type: type, limit: 100 };
+    if (q) data.search = q; else data.order_by = type === 'radio' ? 'name' : 'last_played_desc';
+    if (type === 'favorite') { data.media_type = 'playlist'; data.favorite = true; }
+    this._hass.callWS({ type: 'call_service', domain: 'music_assistant', service: 'get_library', service_data: data, return_response: true })
+      .then((r) => {
+        if (this._libTok !== tok) return;
+        const resp = (r && r.response) || r || {};
+        this._lib.items = resp.items || [];
+        this._render();
+      })
+      .catch((e) => { if (this._libTok !== tok) return; this._lib.items = []; this._lib.err = (e && e.message) || 'Could not load the library'; this._render(); });
+  }
+  _browseSheet() {
+    const L = this._lib || { type: 'playlist', items: null };
+    const tabs = [['playlist', 'Playlists'], ['album', 'Albums'], ['artist', 'Artists'], ['track', 'Songs'], ['radio', 'Radio']];
+    const items = L.items == null ? '<div class="libmsg">Loading…</div>'
+      : L.err ? `<div class="libmsg">${L.err}</div>`
+      : !L.items.length ? '<div class="libmsg">Nothing found.</div>'
+      : `<div class="libgrid">${L.items.map((it, k) => {
+          const sub = (it.artists || []).map((x) => x.name).join(', ');
+          const img = this._img(it.image || (it.album && it.album.image) || '');
+          return `<button class="libit ${it.media_type === 'artist' ? 'round' : ''}" data-act="libplay" data-k="${k}"><div class="im" style="${img ? `background-image:url('${img}')` : ''}"></div><span>${(it.name || '').replace(/</g, '&lt;')}</span>${sub ? `<small>${sub.replace(/</g, '&lt;')}</small>` : ''}</button>`;
+        }).join('')}</div>`;
+    return `<div class="scrim" data-act="closesheet"><div class="sheet wide" role="dialog" aria-label="Browse music" data-stop="1">
+      <div class="sh"><div class="tt">${this.config.music.name || 'Music'}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="chips">${tabs.map(([k, n]) => `<button class="chip ${L.type === k && !L.q ? 'sel' : ''}" data-act="libtab" data-t="${k}">${n}</button>`).join('')}</div>
+      <form class="srch" data-form="lib"><input type="search" placeholder="Search your library" value="${(L.q || '').replace(/"/g, '&quot;')}" data-in="libq" enterkeyhint="search"><button class="chip" type="submit">Search</button></form>
+      ${items}
+    </div></div>`;
+  }
   _onSlideStart(e) {
-    if (e.target.closest('.pw')) return;
+    if (e.target.closest('.pw') || e.target.closest('.mini')) return;
     const t = e.target.closest('[data-slide]'); if (!t) return;
     const r = t.getBoundingClientRect();
     this._slide = { t, x0: e.clientX, y0: e.clientY, r, drag: false, id: e.pointerId };
@@ -545,6 +622,8 @@ class HomeHubCard extends HTMLElement {
       const ent = this.config.lights[i].entity;
       if (pct <= 0) this._call('light', 'turn_off', { entity_id: ent });
       else this._call('light', 'turn_on', { entity_id: ent, brightness_pct: pct });
+    } else if (sl.t.dataset.slide === 'music') {
+      this._call('media_player', 'volume_set', { entity_id: this.config.music.entity, volume_level: pct / 100 });
     } else {
       this._call('media_player', 'volume_set', { entity_id: this.config.media[i].entity, volume_level: pct / 100 });
     }
@@ -604,6 +683,16 @@ class HomeHubCard extends HTMLElement {
       case 'csheet': this._sheet = i; break;
       case 'lsheet': this._sheet = 'L' + i; break;
       case 'msheet': this._sheet = 'M' + i; break;
+      case 'browse': this._sheet = 'B'; if (!this._lib || this._lib.err) this._loadLib('playlist'); break;
+      case 'libtab': this._loadLib(el.dataset.t); break;
+      case 'libplay': {
+        const it = this._lib && this._lib.items && this._lib.items[+el.dataset.k]; if (!it) break;
+        this._call('music_assistant', 'play_media', { entity_id: c.music.entity, media_id: it.uri, media_type: it.media_type, enqueue: 'replace' });
+        this._sheet = null; break;
+      }
+      case 'musplay': { const s = this._st(c.music.entity); this._call('media_player', ['off', 'standby'].includes(s.state) ? 'turn_on' : 'media_play_pause', { entity_id: c.music.entity }); break; }
+      case 'musprev': this._call('media_player', 'media_previous_track', { entity_id: c.music.entity }); break;
+      case 'musnext': this._call('media_player', 'media_next_track', { entity_id: c.music.entity }); break;
       case 'mplay': {
         const m = c.media[i], s = this._st(m.entity);
         if (['off', 'standby'].includes(s.state)) this._call('media_player', 'turn_on', { entity_id: m.entity });
