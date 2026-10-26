@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.0.4';
+const VERSION = '1.1.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -21,6 +21,7 @@ const DEFAULTS = {
   stop_script: 'script.hub_stop_battery_charge',
   climate: [],
   lights: [],
+  media: [],
   garage: null,
   outdoor_garage: null,
   seasons: { halloween: ['10-24', '11-01'], christmas: ['12-01', '01-06'] }
@@ -47,6 +48,11 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M11 9l-2 3h4l-2 3"/></svg>',
   ac: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4.9 6l14.2 12M4.9 18L19.1 6"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M6 5h2v14H6zM9.5 12L19 5v14z"/></svg>',
+  next: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M16 5h2v14h-2zM14.5 12L5 19V5z"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
   spa: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 16c2 0 2-1.5 4-1.5S9 16 11 16s2-1.5 4-1.5S17 16 19 16s2-1.5 2-1.5M3 20c2 0 2-1.5 4-1.5S9 20 11 20s2-1.5 4-1.5S17 20 19 20M8 11c0-2 2-2 2-4M12 11c0-2 2-2 2-4M16 11c0-2 2-2 2-4"/></svg>'
 };
 const WX_ICON = (c) => {
@@ -116,6 +122,16 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .tile .tophead{display:flex;justify-content:space-between;align-items:center;width:100%}
 .pw{border:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#2C2C34;color:#C7C7CC}
 .on-ac .pw,.on-spa .pw,.on-light .pw{background:rgba(0,0,0,.14);color:inherit}
+.stile{overflow:hidden;touch-action:pan-y}
+.stile .fillbar{position:absolute;left:0;top:0;bottom:0;width:0;background:#FFD27A;pointer-events:none;transition:width .15s}
+.stile.dragging .fillbar{transition:none}
+.stile>*:not(.fillbar){position:relative}
+.tile.on-dim{background:#8F7A46;color:#16130A}.tile.on-dim .st{color:#2E2510}
+.tile.on-media{background:#1E3048;color:#F5F5F7}.tile.on-media .fillbar{background:#3F7FCC}.tile.on-media .st{color:#E6EEF8}
+.tile.on-media .pw{background:rgba(0,0,0,.2);color:inherit}
+.tile .lvl{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
+.mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
 .slider input{width:100%;height:44px;-webkit-appearance:none;appearance:none;background:transparent}
 .slider input::-webkit-slider-runnable-track{height:14px;border-radius:7px;background:var(--trk,#2C2C34)}
@@ -203,6 +219,9 @@ class HomeHubCard extends HTMLElement {
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$sleep.addEventListener(ev, () => { if (lp) clearTimeout(lp); lp = null; }));
     this.$awake.addEventListener('click', (e) => this._onClick(e));
     this.$awake.addEventListener('input', (e) => this._onInput(e));
+    this.$awake.addEventListener('pointerdown', (e) => this._onSlideStart(e));
+    this.$awake.addEventListener('pointermove', (e) => this._onSlideMove(e));
+    ['pointerup', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, () => this._onSlideEnd()));
     this.$awake.addEventListener('change', (e) => this._onChange(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onHoldStart(e));
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, (e) => this._onHoldEnd(e)));
@@ -355,7 +374,7 @@ class HomeHubCard extends HTMLElement {
     this.$sleep.classList.toggle('hidden', this._awake);
     this.$awake.classList.toggle('hidden', !this._awake);
     if (!this._awake) { this._renderScene(now); return; }
-    if (this._ptr || this.$awake.querySelector('.hold.pressing')) { this._pending = true; return; }
+    if (this._ptr || this._slide || this.$awake.querySelector('.hold.pressing')) { this._pending = true; return; }
     const html = this._dash(now);
     if (html !== this._lastHtml) { this._lastHtml = html; this.$awake.innerHTML = '<div class="dz">' + html + '</div>'; this._fitDash(); }
   }
@@ -391,7 +410,17 @@ class HomeHubCard extends HTMLElement {
       const on = s.state === 'on';
       const br = s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) + '%' : '';
       const st = s.state === 'unavailable' ? 'Unavailable' : on ? 'On' + (br ? ' · ' + br : '') : 'Off';
-      return `<div class="tile ${on ? 'on-light' : ''}"><button class="pw lpw" data-act="ltoggle" data-i="${i}" aria-pressed="${on}" aria-label="${on ? 'Turn off' : 'Turn on'} ${l.name}">${ICON.bulb}</button><button class="body" data-act="lsheet" data-i="${i}"><div class="nm">${l.name}</div><div class="st">${st}</div></button></div>`;
+      const dim = (s.attributes.supported_color_modes || []).some((m) => m !== 'onoff');
+      const pct = on ? (s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) : 100) : 0;
+      return `<div class="tile ${dim ? 'stile' : ''} ${on ? (dim ? 'on-light on-dim' : 'on-light') : ''}" ${dim ? `data-slide="light" data-i="${i}"` : ''}>${dim ? `<div class="fillbar" style="width:${pct}%"></div>` : ''}<button class="pw lpw" data-act="ltoggle" data-i="${i}" aria-pressed="${on}" aria-label="${on ? 'Turn off' : 'Turn on'} ${l.name}">${ICON.bulb}</button><button class="body" data-act="lsheet" data-i="${i}"><div class="nm">${l.name}</div><div class="st" data-lvl>${st}</div></button></div>`;
+    }).join('');
+    const media = (c.media || []).map((m, i) => {
+      const s = this._st(m.entity); if (!s) return '';
+      const on = !['off', 'unavailable', 'unknown', 'standby'].includes(s.state);
+      const vol = s.attributes.volume_level != null ? Math.round(s.attributes.volume_level * 100) : null;
+      const playing = s.state === 'playing';
+      const st = !on ? (s.state === 'unavailable' ? 'Unavailable' : 'Off') : (s.attributes.media_title ? s.attributes.media_title : cap(s.state)) + (vol != null ? ' · ' + vol + '%' : '');
+      return `<div class="tile stile ${on ? 'on-media' : ''}" ${on && vol != null ? `data-slide="media" data-i="${i}"` : ''}><div class="fillbar" style="width:${on && vol != null ? vol : 0}%"></div><button class="pw" data-act="mplay" data-i="${i}" aria-label="${playing ? 'Pause' : 'Play'} ${m.name}">${!on ? ICON.power : playing ? ICON.pause : ICON.play}</button><button class="body" data-act="msheet" data-i="${i}"><div class="nm">${m.name}</div><div class="st" data-lvl>${st}</div></button></div>`;
     }).join('');
     const g = this._st(c.garage), og = this._st(c.outdoor_garage);
     const gs = g ? g.state : 'unknown';
@@ -401,6 +430,7 @@ class HomeHubCard extends HTMLElement {
     let sheet = '';
     if (this._sheet === 'scene') sheet = this._sceneSheet();
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
+    else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'M') sheet = this._mediaSheet(+this._sheet.slice(1));
     else if (this._sheet != null) sheet = this._sheetHtml(this._sheet);
 
     return `
@@ -430,6 +460,7 @@ class HomeHubCard extends HTMLElement {
   <div class="col">
     <div class="sec">Climate</div><div class="tiles t4">${climate}</div>
     <div class="sec">Lights</div><div class="tiles t5">${lights}</div>
+    ${media ? `<div class="sec">Media</div><div class="tiles t4">${media}</div>` : ''}
     ${c.garage ? `<div class="sec">Garage</div>
     <div class="garage">
       <div class="tile gtile"><div class="tophead"><span class="ic" style="color:${gOpen ? '#FFB340' : '#34C759'}">${ICON.garage}</span><button class="gbtn" data-act="garage">${gOpen ? 'Close' : 'Open'}</button></div>
@@ -471,16 +502,65 @@ class HomeHubCard extends HTMLElement {
       ${!canDim ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
     </div></div>`;
   }
+  _mediaSheet(i) {
+    const m = this.config.media[i]; const s = this._st(m.entity); if (!s) return '';
+    const a = s.attributes, on = !['off', 'unavailable', 'unknown', 'standby'].includes(s.state);
+    const vol = a.volume_level != null ? Math.round(a.volume_level * 100) : null;
+    const now = [a.media_title, a.media_artist].filter(Boolean).join(' · ');
+    return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${m.name} controls" data-stop="1">
+      <div class="sh"><div class="tt">${m.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="prow"><span class="mnow">${on ? (now || cap(s.state)) : (s.state === 'unavailable' ? 'Unavailable' : 'Off')}</span>
+        <button class="pbtn" data-act="mpower" data-i="${i}" style="background:${on ? '#2C2C34' : '#8EC1FF'};color:${on ? '#F5F5F7' : '#08121F'}">${on ? 'Turn off' : 'Turn on'}</button></div>
+      ${on ? `<div class="mctl"><button data-act="mprev" data-i="${i}" aria-label="Previous">${ICON.prev}</button><button data-act="mplay" data-i="${i}" aria-label="Play or pause" style="background:#8EC1FF;color:#08121F">${s.state === 'playing' ? ICON.pause : ICON.play}</button><button data-act="mnext" data-i="${i}" aria-label="Next">${ICON.next}</button></div>` : ''}
+      ${on && vol != null ? `<div class="slider"><div class="sl"><span>Volume</span><b data-out="vol">${vol}%</b></div><input type="range" min="0" max="100" step="1" value="${vol}" data-in="vol" data-i="${i}" aria-label="Volume" style="--trk:linear-gradient(90deg,#1E2E44,#8EC1FF)"></div>
+      <div class="chips"><button class="chip ${a.is_volume_muted ? 'sel' : ''}" data-act="mmute" data-i="${i}">${a.is_volume_muted ? 'Muted' : 'Mute'}</button></div>` : ''}
+    </div></div>`;
+  }
+  _onSlideStart(e) {
+    if (e.target.closest('.pw')) return;
+    const t = e.target.closest('[data-slide]'); if (!t) return;
+    const r = t.getBoundingClientRect();
+    this._slide = { t, x0: e.clientX, y0: e.clientY, r, drag: false, id: e.pointerId };
+  }
+  _onSlideMove(e) {
+    const sl = this._slide; if (!sl) return;
+    if (!sl.drag) {
+      if (Math.abs(e.clientX - sl.x0) < 10) return;
+      if (Math.abs(e.clientY - sl.y0) > Math.abs(e.clientX - sl.x0)) { this._slide = null; return; }
+      sl.drag = true; sl.t.classList.add('dragging');
+      try { sl.t.setPointerCapture(sl.id); } catch (err) { /* ignore */ }
+    }
+    e.preventDefault();
+    const f = Math.max(0, Math.min(1, (e.clientX - sl.r.left) / sl.r.width));
+    sl.f = f;
+    const fb = sl.t.querySelector('.fillbar'); if (fb) fb.style.width = Math.round(f * 100) + '%';
+    const lv = sl.t.querySelector('[data-lvl]'); if (lv) lv.textContent = Math.round(f * 100) + '%';
+  }
+  _onSlideEnd() {
+    const sl = this._slide; this._slide = null; if (!sl || !sl.drag) return;
+    sl.t.classList.remove('dragging');
+    this._suppressClick = Date.now();
+    const i = +sl.t.dataset.i, pct = Math.round((sl.f || 0) * 100);
+    if (sl.t.dataset.slide === 'light') {
+      const ent = this.config.lights[i].entity;
+      if (pct <= 0) this._call('light', 'turn_off', { entity_id: ent });
+      else this._call('light', 'turn_on', { entity_id: ent, brightness_pct: pct });
+    } else {
+      this._call('media_player', 'volume_set', { entity_id: this.config.media[i].entity, volume_level: pct / 100 });
+    }
+    this._ptr = false;
+  }
   _onInput(e) {
     const el = e.target.closest('[data-in]'); if (!el) return;
     const out = this.$awake.querySelector('[data-out="' + el.dataset.in + '"]');
-    if (out) out.textContent = el.dataset.in === 'br' ? el.value + '%' : el.value + ' K';
+    if (out) out.textContent = el.dataset.in === 'ct' ? el.value + ' K' : el.value + '%';
   }
   _onChange(e) {
     const el = e.target.closest('[data-in]'); if (!el) return;
-    const l = this.config.lights[+el.dataset.i];
+    const l = this.config.lights[+el.dataset.i] || {};
     if (el.dataset.in === 'br') this._call('light', 'turn_on', { entity_id: l.entity, brightness_pct: +el.value });
     if (el.dataset.in === 'ct') this._call('light', 'turn_on', { entity_id: l.entity, color_temp_kelvin: +el.value });
+    if (el.dataset.in === 'vol') this._call('media_player', 'volume_set', { entity_id: this.config.media[+el.dataset.i].entity, volume_level: +el.value / 100 });
     this._ptr = false;
   }
   _sheetHtml(i) {
@@ -505,6 +585,7 @@ class HomeHubCard extends HTMLElement {
       ${extra}</div></div>`;
   }
   _onClick(e) {
+    if (this._suppressClick && Date.now() - this._suppressClick < 400) { this._suppressClick = 0; return; }
     const el = e.target.closest('[data-act]');
     if (!el) return;
     if (el.classList.contains('scrim') && e.target.closest('[data-stop]')) return;
@@ -522,6 +603,17 @@ class HomeHubCard extends HTMLElement {
       }
       case 'csheet': this._sheet = i; break;
       case 'lsheet': this._sheet = 'L' + i; break;
+      case 'msheet': this._sheet = 'M' + i; break;
+      case 'mplay': {
+        const m = c.media[i], s = this._st(m.entity);
+        if (['off', 'standby'].includes(s.state)) this._call('media_player', 'turn_on', { entity_id: m.entity });
+        else this._call('media_player', 'media_play_pause', { entity_id: m.entity });
+        break;
+      }
+      case 'mpower': { const m = c.media[i], s = this._st(m.entity); this._call('media_player', ['off', 'standby', 'unavailable', 'unknown'].includes(s.state) ? 'turn_on' : 'turn_off', { entity_id: m.entity }); break; }
+      case 'mprev': this._call('media_player', 'media_previous_track', { entity_id: c.media[i].entity }); break;
+      case 'mnext': this._call('media_player', 'media_next_track', { entity_id: c.media[i].entity }); break;
+      case 'mmute': { const m = c.media[i], s = this._st(m.entity); this._call('media_player', 'volume_mute', { entity_id: m.entity, is_volume_muted: !s.attributes.is_volume_muted }); break; }
       case 'lcolor': this._call('light', 'turn_on', { entity_id: c.lights[i].entity, rgb_color: el.dataset.rgb.split(',').map(Number) }); break;
       case 'scenesheet': this._sheet = 'scene'; break;
       case 'hstyle': this._call('input_select', 'select_option', { entity_id: c.halloween_style, option: el.dataset.v }); break;
