@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -71,7 +71,11 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .sleep{position:absolute;inset:0;background:#000}
 .sleep .stage{position:absolute;left:0;top:0;width:1180px;height:820px;transform-origin:0 0}
 .sleep.hidden,.awake.hidden{display:none}
-.awake{position:absolute;inset:0;padding:max(24px,env(safe-area-inset-top)) max(28px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(28px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:20px;overflow-y:auto}
+.awake{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.dz{width:1180px;min-height:820px;padding:24px 28px;display:flex;flex-direction:column;gap:20px;transform-origin:0 0}
+.portrait .dz{width:820px;min-height:1180px}
+.portrait .grid{grid-template-columns:1fr}
+.portrait .t5{grid-template-columns:repeat(3,minmax(0,1fr))}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .clock{display:flex;align-items:baseline;gap:16px}
 .clock .t{font-size:56px;font-weight:600;letter-spacing:-1.5px;line-height:1;font-variant-numeric:tabular-nums}
@@ -81,7 +85,6 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .pill b{font-weight:600}.pill .muted{color:#A1A1A8}
 .dot{width:8px;height:8px;border-radius:50%}
 .grid{display:grid;grid-template-columns:minmax(300px,340px) minmax(0,1fr);gap:20px;flex:1;min-height:0}
-@media (max-width:900px){.grid{grid-template-columns:1fr}}
 .col{display:flex;flex-direction:column;gap:16px;min-width:0}
 .card{background:#1C1C22;border-radius:28px;padding:20px 22px}
 .label{font-size:13px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#A1A1A8}
@@ -102,7 +105,6 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .sec{font-size:20px;font-weight:600}
 .tiles{display:grid;gap:14px}
 .t4{grid-template-columns:repeat(4,minmax(0,1fr))}.t5{grid-template-columns:repeat(5,minmax(0,1fr))}
-@media (max-width:1100px){.t5{grid-template-columns:repeat(3,minmax(0,1fr))}.t4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .tile{position:relative;border:none;border-radius:24px;padding:16px;min-height:132px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;gap:6px;background:#1C1C22;color:#F5F5F7;text-align:left;transition:background .2s,color .2s}
 .tile .nm{font-size:15px;font-weight:600;line-height:1.25}
 .tile .st{font-size:14px;color:#A1A1A8}
@@ -209,7 +211,7 @@ class HomeHubCard extends HTMLElement {
       this._sleepNow();
     }, (this.config.idle_seconds || 120) * 1000);
   }
-  _wake() { if (this._awake) return; this._awake = true; this._armIdle(); this._render(); }
+  _wake() { if (this._awake) return; this._awake = true; this._ptr = false; this._armIdle(); this._render(); }
   _sleepNow() { this._awake = false; this._sheet = null; this._prompt = false; clearTimeout(this._idle); this._render(); }
 
   async _subscribeForecast() {
@@ -292,10 +294,22 @@ class HomeHubCard extends HTMLElement {
     this.$stage.innerHTML = sc.body.replace(/\{\{([^}]+)\}\}/g, (m, g) => { const x = get(g); return x === undefined ? '' : x; });
     this._fit();
   }
+  _fitDash() {
+    const dz = this.$awake && this.$awake.querySelector('.dz'); if (!dz) return;
+    const w = window.innerWidth, h = window.innerHeight, portrait = h > w;
+    this.$root.classList.toggle('portrait', portrait);
+    const dw = portrait ? 820 : 1180, dh = portrait ? 1180 : 820;
+    const z = Math.min(w / dw, h / dh);
+    dz.style.transform = 'scale(' + z + ')';
+    dz.style.marginLeft = Math.max(0, (w - dw * z) / 2) + 'px';
+    dz.style.marginBottom = (dz.offsetHeight * (z - 1)) + 'px';
+  }
   _fit() {
     if (!this.$sleep) return;
-    const w = this.$sleep.clientWidth || window.innerWidth, h = this.$sleep.clientHeight || window.innerHeight;
-    const s = Math.max(w / 1180, h / 820);
+    const w = window.innerWidth, h = window.innerHeight;
+    const cover = Math.max(w / 1180, h / 820), contain = Math.min(w / 1180, h / 820);
+    const s = cover / contain <= 1.12 ? cover : contain;
+    this._fitDash();
     const ox = (w - 1180 * s) / 2, oy = (h - 820 * s) / 2;
     this.$stage.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
   }
@@ -309,7 +323,7 @@ class HomeHubCard extends HTMLElement {
     if (!this._awake) { this._renderScene(now); return; }
     if (this._ptr || this.$awake.querySelector('.hold.pressing')) { this._pending = true; return; }
     const html = this._dash(now);
-    if (html !== this._lastHtml) { this._lastHtml = html; this.$awake.innerHTML = html; }
+    if (html !== this._lastHtml) { this._lastHtml = html; this.$awake.innerHTML = '<div class="dz">' + html + '</div>'; this._fitDash(); }
   }
   _dash(now) {
     const c = this.config, live = this._live(now);
