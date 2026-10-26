@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -66,6 +66,7 @@ const COND_TEXT = { 'clear-night': 'Clear', cloudy: 'Cloudy', exceptional: 'Unus
 const CSS = `
 :host{display:block;height:100%}
 *{box-sizing:border-box}
+.root.kiosk{z-index:2147483000}
 .root{position:fixed;inset:0;background:#0B0B0F;color:#F5F5F7;font-family:Inter,-apple-system,system-ui,sans-serif;overflow:hidden;z-index:5;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .sleep{position:absolute;inset:0;background:#000}
@@ -154,6 +155,7 @@ class HomeHubCard extends HTMLElement {
     document.addEventListener('hub-scenes-ready', this._rerenderBound || (this._rerenderBound = () => { this._sceneKey = null; this._render(); }));
   }
   disconnectedCallback() {
+    if (this._portal && this._portal.isConnected) { this.shadowRoot.appendChild(this.$wrap); this._portal.remove(); this._kioskOn = null; }
     clearInterval(this._tick); this._tick = null;
     window.removeEventListener('resize', this._fitBound);
     if (this._unsubFc) { this._unsubFc.then((u) => u && u()).catch(() => {}); this._unsubFc = null; }
@@ -182,7 +184,8 @@ class HomeHubCard extends HTMLElement {
       l.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;600&display=swap';
       document.head.appendChild(l);
     }
-    root.innerHTML = `<style>${CSS}</style><div class="root"><div class="sleep"><div class="stage"></div></div><div class="awake hidden"></div></div>`;
+    root.innerHTML = `<div class="wrap"><style>${CSS}</style><div class="root"><div class="sleep"><div class="stage"></div></div><div class="awake hidden"></div></div></div>`;
+    this.$wrap = root.querySelector('.wrap');
     this.$root = root.querySelector('.root');
     this.$sleep = root.querySelector('.sleep');
     this.$stage = root.querySelector('.stage');
@@ -195,6 +198,27 @@ class HomeHubCard extends HTMLElement {
     this.$awake.addEventListener('click', (e) => this._onClick(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onHoldStart(e));
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, (e) => this._onHoldEnd(e)));
+  }
+  _placeKiosk() {
+    const k = this._st(this.config.kiosk_toggle);
+    const on = !!(k && k.state === 'on');
+    if (on === this._kioskOn && this.$wrap.isConnected) return;
+    this._kioskOn = on;
+    if (on) {
+      if (!this._portal) {
+        this._portal = document.createElement('div');
+        this._portal.setAttribute('data-home-hub', '');
+        this._portal.attachShadow({ mode: 'open' });
+      }
+      if (!this._portal.isConnected) document.body.appendChild(this._portal);
+      this._portal.shadowRoot.appendChild(this.$wrap);
+      this.$root.classList.add('kiosk');
+    } else {
+      this.shadowRoot.appendChild(this.$wrap);
+      if (this._portal && this._portal.isConnected) this._portal.remove();
+      this.$root.classList.remove('kiosk');
+    }
+    this._fit();
   }
   _toggleKiosk() { const k = this.config.kiosk_toggle; if (this._st(k)) this._call('input_boolean', 'toggle', { entity_id: k }); }
   _activity() {
@@ -296,7 +320,7 @@ class HomeHubCard extends HTMLElement {
   }
   _fitDash() {
     const dz = this.$awake && this.$awake.querySelector('.dz'); if (!dz) return;
-    const w = window.innerWidth, h = window.innerHeight, portrait = h > w;
+    const w = this.$root.clientWidth || window.innerWidth, h = this.$root.clientHeight || window.innerHeight, portrait = h > w;
     this.$root.classList.toggle('portrait', portrait);
     const dw = portrait ? 820 : 1180, dh = portrait ? 1180 : 820;
     const z = Math.min(w / dw, h / dh);
@@ -306,7 +330,7 @@ class HomeHubCard extends HTMLElement {
   }
   _fit() {
     if (!this.$sleep) return;
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = this.$root.clientWidth || window.innerWidth, h = this.$root.clientHeight || window.innerHeight;
     const cover = Math.max(w / 1180, h / 820), contain = Math.min(w / 1180, h / 820);
     const s = cover / contain <= 1.12 ? cover : contain;
     this._fitDash();
@@ -317,6 +341,7 @@ class HomeHubCard extends HTMLElement {
   /* ---------- dashboard ---------- */
   _render() {
     if (!this._hass || !this.shadowRoot) return;
+    if (this.isConnected) this._placeKiosk();
     const now = new Date();
     this.$sleep.classList.toggle('hidden', this._awake);
     this.$awake.classList.toggle('hidden', !this._awake);
