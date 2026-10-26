@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -73,7 +73,7 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .sleep .stage{position:absolute;left:0;top:0;width:1180px;height:820px;transform-origin:0 0}
 .sleep.hidden,.awake.hidden{display:none}
 .awake{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-.dz{width:1180px;min-height:820px;padding:24px 28px;display:flex;flex-direction:column;gap:20px;transform-origin:0 0}
+.dz{position:relative;width:1180px;min-height:820px;padding:24px 28px;display:flex;flex-direction:column;gap:20px;transform-origin:0 0}
 .portrait .dz{width:820px;min-height:1180px}
 .portrait .grid{grid-template-columns:1fr}
 .portrait .t5{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -115,7 +115,13 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .tile.on-spa{background:#FF9F6B;color:#1F0E04}.tile.on-spa .st{color:#4A2610}
 .tile .tophead{display:flex;justify-content:space-between;align-items:center;width:100%}
 .pw{border:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#2C2C34;color:#C7C7CC}
-.on-ac .pw,.on-spa .pw{background:rgba(0,0,0,.14);color:inherit}
+.on-ac .pw,.on-spa .pw,.on-light .pw{background:rgba(0,0,0,.14);color:inherit}
+.slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
+.slider input{width:100%;height:44px;-webkit-appearance:none;appearance:none;background:transparent}
+.slider input::-webkit-slider-runnable-track{height:14px;border-radius:7px;background:var(--trk,#2C2C34)}
+.slider input::-webkit-slider-thumb{-webkit-appearance:none;width:32px;height:32px;margin-top:-9px;border-radius:50%;background:#F5F5F7;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.sw{width:48px;height:48px;border-radius:50%;border:3px solid transparent;padding:0}
+.sw.sel{border-color:#F5F5F7}
 .tmp{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
 .body{border:none;background:transparent;padding:0;text-align:left;color:inherit;min-height:44px;width:100%}
 .garage{display:flex;gap:14px;align-items:stretch}
@@ -196,6 +202,8 @@ class HomeHubCard extends HTMLElement {
     this.$sleep.addEventListener('pointerdown', () => { lp = setTimeout(() => { lp = null; this._toggleKiosk(); }, 2500); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$sleep.addEventListener(ev, () => { if (lp) clearTimeout(lp); lp = null; }));
     this.$awake.addEventListener('click', (e) => this._onClick(e));
+    this.$awake.addEventListener('input', (e) => this._onInput(e));
+    this.$awake.addEventListener('change', (e) => this._onChange(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onHoldStart(e));
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, (e) => this._onHoldEnd(e)));
   }
@@ -324,6 +332,7 @@ class HomeHubCard extends HTMLElement {
     this.$root.classList.toggle('portrait', portrait);
     const dw = portrait ? 820 : 1180, dh = portrait ? 1180 : 820;
     const z = Math.min(w / dw, h / dh);
+    dz.style.minHeight = Math.ceil(h / z) + 'px';
     dz.style.transform = 'scale(' + z + ')';
     dz.style.marginLeft = Math.max(0, (w - dw * z) / 2) + 'px';
     dz.style.marginBottom = (dz.offsetHeight * (z - 1)) + 'px';
@@ -382,7 +391,7 @@ class HomeHubCard extends HTMLElement {
       const on = s.state === 'on';
       const br = s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) + '%' : '';
       const st = s.state === 'unavailable' ? 'Unavailable' : on ? 'On' + (br ? ' · ' + br : '') : 'Off';
-      return `<button class="tile ${on ? 'on-light' : ''}" data-act="ltoggle" data-i="${i}" aria-pressed="${on}"><span class="ic">${ICON.bulb}</span><span class="nm">${l.name}</span><span class="st">${st}</span></button>`;
+      return `<div class="tile ${on ? 'on-light' : ''}"><button class="pw lpw" data-act="ltoggle" data-i="${i}" aria-pressed="${on}" aria-label="${on ? 'Turn off' : 'Turn on'} ${l.name}">${ICON.bulb}</button><button class="body" data-act="lsheet" data-i="${i}"><div class="nm">${l.name}</div><div class="st">${st}</div></button></div>`;
     }).join('');
     const g = this._st(c.garage), og = this._st(c.outdoor_garage);
     const gs = g ? g.state : 'unknown';
@@ -391,6 +400,7 @@ class HomeHubCard extends HTMLElement {
     const prompt = this._prompt && og && ogs === 'closed';
     let sheet = '';
     if (this._sheet === 'scene') sheet = this._sceneSheet();
+    else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
     else if (this._sheet != null) sheet = this._sheetHtml(this._sheet);
 
     return `
@@ -439,6 +449,40 @@ class HomeHubCard extends HTMLElement {
       <div class="prow"><span>Auto follows the time, weather and season.</span><button class="pbtn" data-act="sleep" style="background:#2C2C34;color:#F5F5F7">Show now</button></div>
     </div></div>`;
   }
+  _lightSheet(i) {
+    const l = this.config.lights[i]; const s = this._st(l.entity); if (!s) return '';
+    const on = s.state === 'on', a = s.attributes;
+    const modes = a.supported_color_modes || [];
+    const canDim = modes.some((m) => m !== 'onoff');
+    const canTemp = modes.includes('color_temp');
+    const canColor = modes.some((m) => ['hs', 'rgb', 'rgbw', 'rgbww', 'xy'].includes(m));
+    const br = a.brightness != null ? Math.round(a.brightness / 2.55) : (on ? 100 : 0);
+    const kmin = a.min_color_temp_kelvin || 2000, kmax = a.max_color_temp_kelvin || 6500;
+    const k = a.color_temp_kelvin || Math.round((kmin + kmax) / 2);
+    const cols = [['#FF4D4D', [255, 77, 77]], ['#FF9A3C', [255, 154, 60]], ['#FFD84A', [255, 216, 74]], ['#4CD964', [76, 217, 100]], ['#3CA8FF', [60, 168, 255]], ['#8A5CFF', [138, 92, 255]], ['#FF5CC8', [255, 92, 200]]];
+    const rgb = a.rgb_color ? a.rgb_color.join(',') : '';
+    return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${l.name} settings" data-stop="1">
+      <div class="sh"><div class="tt">${l.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="prow"><span>${s.state === 'unavailable' ? 'Unavailable' : on ? 'On' + (canDim ? ' · ' + br + '%' : '') : 'Off'}</span>
+        <button class="pbtn" data-act="ltoggle" data-i="${i}" style="background:${on ? '#2C2C34' : '#FFD27A'};color:${on ? '#F5F5F7' : '#16130A'}">${on ? 'Turn off' : 'Turn on'}</button></div>
+      ${canDim ? `<div class="slider"><div class="sl"><span>Brightness</span><b data-out="br">${br}%</b></div><input type="range" min="1" max="100" step="1" value="${br || 1}" data-in="br" data-i="${i}" aria-label="Brightness" style="--trk:linear-gradient(90deg,#3A3420,#FFD27A)"></div>` : ''}
+      ${canTemp ? `<div class="slider"><div class="sl"><span>Warm to cool</span><b data-out="ct">${k} K</b></div><input type="range" min="${kmin}" max="${kmax}" step="50" value="${k}" data-in="ct" data-i="${i}" aria-label="Colour temperature" style="--trk:linear-gradient(90deg,#FFB35C,#FFF4E0,#CFE4FF)"></div>` : ''}
+      ${canColor ? `<div><div class="label" style="margin-bottom:10px">Colour</div><div class="chips">${cols.map((c) => `<button class="sw ${rgb === c[1].join(',') ? 'sel' : ''}" style="background:${c[0]}" data-act="lcolor" data-i="${i}" data-rgb="${c[1].join(',')}" aria-label="Colour ${c[0]}"></button>`).join('')}</div></div>` : ''}
+      ${!canDim ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
+    </div></div>`;
+  }
+  _onInput(e) {
+    const el = e.target.closest('[data-in]'); if (!el) return;
+    const out = this.$awake.querySelector('[data-out="' + el.dataset.in + '"]');
+    if (out) out.textContent = el.dataset.in === 'br' ? el.value + '%' : el.value + ' K';
+  }
+  _onChange(e) {
+    const el = e.target.closest('[data-in]'); if (!el) return;
+    const l = this.config.lights[+el.dataset.i];
+    if (el.dataset.in === 'br') this._call('light', 'turn_on', { entity_id: l.entity, brightness_pct: +el.value });
+    if (el.dataset.in === 'ct') this._call('light', 'turn_on', { entity_id: l.entity, color_temp_kelvin: +el.value });
+    this._ptr = false;
+  }
   _sheetHtml(i) {
     const cl = this.config.climate[i]; const s = this._st(cl.entity); if (!s) return '';
     const on = s.state !== 'off';
@@ -477,6 +521,8 @@ class HomeHubCard extends HTMLElement {
         break;
       }
       case 'csheet': this._sheet = i; break;
+      case 'lsheet': this._sheet = 'L' + i; break;
+      case 'lcolor': this._call('light', 'turn_on', { entity_id: c.lights[i].entity, rgb_color: el.dataset.rgb.split(',').map(Number) }); break;
       case 'scenesheet': this._sheet = 'scene'; break;
       case 'hstyle': this._call('input_select', 'select_option', { entity_id: c.halloween_style, option: el.dataset.v }); break;
       case 'closesheet': this._sheet = null; break;
