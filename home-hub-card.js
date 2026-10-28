@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -455,9 +455,8 @@ class HomeHubCard extends HTMLElement {
       const on = s.state !== 'off' && s.state !== 'unavailable';
       const cur = s.attributes.current_temperature, tgt = s.attributes.temperature;
       const cls = on ? (cl.spa ? 'on-spa' : 'on-ac') : '';
-      const rng = s.attributes.preset_mode === 'home' ? 'High' : s.attributes.preset_mode === 'eco' ? 'Low' : '';
       const sending = cl.spa && (this._spaCur || (this._spaQ && this._spaQ.length));
-      const status = cl.spa ? (sending ? 'Sending to spa…' : (on ? 'Ready' : 'Rest') + ' · ' + (rng ? rng + ' ' : '') + tgt + '°') : (on ? cap(s.state) + ' · set ' + tgt + '°' : 'Off');
+      const status = cl.spa ? (sending ? 'Sending to spa…' : (on ? 'Heating · ' : 'Resting · ') + tgt + '°') : (on ? cap(s.state) + ' · set ' + tgt + '°' : 'Off');
       return `<div class="tile ${cls}"><div class="tophead"><button class="pw" data-act="ctoggle" data-i="${i}" aria-label="${on ? 'Turn off' : 'Turn on'} ${cl.name}">${ICON.power}</button><span class="tmp">${cur != null ? Math.round(cur) + '°' : ''}</span></div><button class="body" data-act="csheet" data-i="${i}"><div class="nm">${cl.name}</div><div class="st">${status}</div></button></div>`;
     }).join('');
     const lights = c.lights.map((l, i) => {
@@ -678,11 +677,10 @@ class HomeHubCard extends HTMLElement {
     let tgt = s.attributes.temperature;
     let extra = '';
     if (cl.spa) {
-      const pt = this._spaPending('temp'), pm = this._spaPending('mode'), pr = this._spaPending('range');
+      const pt = this._spaPending('temp'), pm = this._spaPending('mode');
       if (pt) tgt = pt.want; if (pm) on = pm.want !== 'off';
-      const rng = pr ? pr.want : s.attributes.preset_mode;
       const busy = this._spaCur || (this._spaQ && this._spaQ.length);
-      extra += `<div><div class="label" style="margin-bottom:10px">Temperature range${busy ? ' · <span style="color:#FF9F6B">sending to spa…</span>' : ''}</div><div class="chips"><button class="chip ${rng === 'home' ? 'sel' : ''}" data-act="srange" data-i="${i}" data-v="home">High range</button><button class="chip ${rng === 'eco' ? 'sel' : ''}" data-act="srange" data-i="${i}" data-v="eco">Low range</button></div></div>`;
+      if (busy) extra += `<div class="label" style="color:#FF9F6B">Sending to spa…</div>`;
       const chips = (cl.jets || []).map((j, k) => { const js = this._st(j); const pj = this._spaPending('jet:' + j); const jo = pj ? pj.want === 'on' : js && js.state === 'on'; return `<button class="chip ${jo ? 'sel' : ''}" data-act="jet" data-e="${j}">Jet ${k + 1}</button>`; }).join('');
       const ls = this._st(cl.spa_light); const pl = this._spaPending('jet:' + cl.spa_light); const lo = pl ? pl.want === 'on' : ls && ls.state === 'on';
       extra += `<div><div class="label" style="margin-bottom:10px">Jets and lights</div><div class="chips">${chips}<button class="chip ${lo ? 'sel' : ''}" data-act="jet" data-e="${cl.spa_light}">Lights</button></div></div>`;
@@ -693,8 +691,8 @@ class HomeHubCard extends HTMLElement {
     const accent = cl.spa ? '#FF9F6B' : '#8EC1FF';
     return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${cl.name} controls" data-stop="1">
       <div class="sh"><div class="tt">${cl.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
-      <div class="prow"><span>${cl.spa ? (on ? 'Ready mode' : 'Rest mode') + (s.attributes.current_temperature != null ? ' · water ' + s.attributes.current_temperature + '°' : '') : (on ? 'Running' : 'Off') + (s.attributes.current_temperature != null ? ' · room ' + s.attributes.current_temperature + '°' : '')}</span>
-        <button class="pbtn" data-act="ctoggle" data-i="${i}" style="background:${on ? '#2C2C34' : accent};color:${on ? '#F5F5F7' : '#08121F'}">${cl.spa ? (on ? 'Switch to Rest' : 'Switch to Ready') : on ? 'Turn off' : 'Turn on'}</button></div>
+      <div class="prow"><span>${cl.spa ? (on ? 'Heating' : 'Resting') + (s.attributes.current_temperature != null ? ' · water ' + s.attributes.current_temperature + '°' : '') : (on ? 'Running' : 'Off') + (s.attributes.current_temperature != null ? ' · room ' + s.attributes.current_temperature + '°' : '')}</span>
+        <button class="pbtn" data-act="ctoggle" data-i="${i}" style="background:${on ? '#2C2C34' : accent};color:${on ? '#F5F5F7' : '#08121F'}">${cl.spa ? (on ? 'Rest' + (cl.rest_temp ? ' · ' + cl.rest_temp + '°' : '') : 'Start' + (cl.start_temp ? ' · ' + cl.start_temp + '°' : '')) : on ? 'Turn off' : 'Turn on'}</button></div>
       <div class="stepper"><button data-act="tdown" data-i="${i}" aria-label="Lower temperature">−</button><div class="v"><span>${cl.spa ? 'Target water' : 'Set to'}</span><b>${tgt != null ? tgt : '—'}°</b></div><button data-act="tup" data-i="${i}" aria-label="Raise temperature">+</button></div>
       ${extra}</div></div>`;
   }
@@ -711,7 +709,9 @@ class HomeHubCard extends HTMLElement {
       case 'ltoggle': this._call('light', 'toggle', { entity_id: c.lights[i].entity }); break;
       case 'ctoggle': {
         const s = this._st(cl.entity);
-        if (cl.spa) {
+        if (cl.spa && cl.start_script && cl.rest_script) {
+          this._call('script', 'turn_on', { entity_id: s.state === 'off' ? cl.start_script : cl.rest_script });
+        } else if (cl.spa) {
           const pend = this._spaPending('mode'); const cur = pend ? pend.want : s.state;
           const want = cur === 'off' ? 'heat' : 'off', e = cl.entity;
           this._spaEnqueue({ key: 'mode', want, svc: ['climate', 'set_hvac_mode', { entity_id: e, hvac_mode: want }], done: (h) => h.states[e] && h.states[e].state === want });
