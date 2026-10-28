@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -147,6 +147,19 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .libit small{color:#8E8E93;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .srch{display:flex;gap:10px}.srch input{flex:1;min-width:0;border:none;border-radius:14px;background:#2C2C34;color:#F5F5F7;font:inherit;font-size:16px;padding:12px 16px}
 .libmsg{color:#8E8E93;font-size:15px;padding:20px 0}
+.sheet.spa{width:min(820px,100%);background:linear-gradient(160deg,#3B2416,#1C1C22 60%);gap:14px;padding:24px 26px}
+.busy{font-size:13px;color:#FF9F6B;font-weight:500;margin-left:8px}
+.spagrid{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;align-items:start}
+.dialrow{display:flex;align-items:center;justify-content:center;gap:6px}
+.dial{width:240px;height:230px;touch-action:none;cursor:pointer}
+.rb{border:none;width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.1);color:#F5F5F7;font-size:26px;margin-top:110px;flex:none}
+.sline{text-align:center;font-size:15px;color:#E2D3C8;margin:2px 0 12px}.sline b{color:#FFB27A}.sline small{display:block;color:#C9B9AE;font-size:13px;margin-top:3px}
+.chips.cen{justify-content:center}.sheet.spa .chip{min-height:40px;padding:9px 16px;background:rgba(255,255,255,.08)}.sheet.spa .chip.sel{background:#FF8A4C;color:#1A0E06}
+.sidecol{display:flex;flex-direction:column;gap:10px}
+.mbtn{border:none;border-radius:16px;min-height:54px;padding:0 16px;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.08);color:#F5F5F7;font-size:16px;text-align:left}
+.mbtn b{font-weight:600}.mbtn span{margin-left:auto;font-size:14px;opacity:.75}.mbtn svg{width:22px;height:22px}
+.mbtn.act{background:#FF8A4C;color:#1A0E06}
+.sidecol .label{margin-top:6px}.fl{font-size:15px;color:#E2D3C8;font-variant-numeric:tabular-nums}
 .mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
 .mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
@@ -271,9 +284,9 @@ class HomeHubCard extends HTMLElement {
       this._render();
     });
     this.$awake.addEventListener('input', (e) => this._onInput(e));
-    this.$awake.addEventListener('pointerdown', (e) => this._onSlideStart(e));
-    this.$awake.addEventListener('pointermove', (e) => this._onSlideMove(e));
-    ['pointerup', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, () => this._onSlideEnd()));
+    this.$awake.addEventListener('pointerdown', (e) => { this._onDialStart(e); this._onSlideStart(e); });
+    this.$awake.addEventListener('pointermove', (e) => { this._onDialMove(e); this._onSlideMove(e); });
+    ['pointerup', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, () => { this._onDialEnd(); this._onSlideEnd(); }));
     this.$awake.addEventListener('change', (e) => this._onChange(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onHoldStart(e));
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, (e) => this._onHoldEnd(e)));
@@ -427,7 +440,7 @@ class HomeHubCard extends HTMLElement {
     this.$awake.classList.toggle('hidden', !this._awake);
     if (!this._awake) { this._renderScene(now); return; }
     const ae = (this.shadowRoot && this.shadowRoot.activeElement) || document.activeElement;
-    if (this._ptr || this._slide || this.$awake.querySelector('.hold.pressing') || (ae && ae.dataset && ae.dataset.in === 'libq')) { this._pending = true; return; }
+    if (this._ptr || this._slide || this._dial || this.$awake.querySelector('.hold.pressing') || (ae && ae.dataset && ae.dataset.in === 'libq')) { this._pending = true; return; }
     const html = this._dash(now);
     if (html !== this._lastHtml) { this._lastHtml = html; this.$awake.innerHTML = '<div class="dz">' + html + '</div>'; this._fitDash(); }
   }
@@ -673,6 +686,7 @@ class HomeHubCard extends HTMLElement {
   }
   _sheetHtml(i) {
     const cl = this.config.climate[i]; const s = this._st(cl.entity); if (!s) return '';
+    if (cl.spa && cl.start_script) return this._spaSheet(i);
     let on = s.state !== 'off';
     let tgt = s.attributes.temperature;
     let extra = '';
@@ -695,6 +709,83 @@ class HomeHubCard extends HTMLElement {
         <button class="pbtn" data-act="ctoggle" data-i="${i}" style="background:${on ? '#2C2C34' : accent};color:${on ? '#F5F5F7' : '#08121F'}">${cl.spa ? (on ? 'Rest' + (cl.rest_temp ? ' · ' + cl.rest_temp + '°' : '') : 'Start' + (cl.start_temp ? ' · ' + cl.start_temp + '°' : '')) : on ? 'Turn off' : 'Turn on'}</button></div>
       <div class="stepper"><button data-act="tdown" data-i="${i}" aria-label="Lower temperature">−</button><div class="v"><span>${cl.spa ? 'Target water' : 'Set to'}</span><b>${tgt != null ? tgt : '—'}°</b></div><button data-act="tup" data-i="${i}" aria-label="Raise temperature">+</button></div>
       ${extra}</div></div>`;
+  }
+  _dialGeo(t, mn, mx) {
+    const a = (135 + (Math.max(mn, Math.min(mx, t)) - mn) / (mx - mn) * 270) * Math.PI / 180;
+    return [120 + 96 * Math.cos(a), 120 + 96 * Math.sin(a)];
+  }
+  _dialArc(t0, t1, mn, mx) {
+    const [x0, y0] = this._dialGeo(t0, mn, mx), [x1, y1] = this._dialGeo(t1, mn, mx);
+    const large = (t1 - t0) / (mx - mn) * 270 > 180 ? 1 : 0;
+    return `M${x0.toFixed(1)} ${y0.toFixed(1)} A96 96 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+  }
+  _spaSheet(i) {
+    const cl = this.config.climate[i]; const s = this._st(cl.entity); const a = s.attributes;
+    const mn = cl.dial_min || 26, mx = cl.dial_max || 40;
+    const pt = this._spaPending('temp'); const tgt = pt ? pt.want : a.temperature; const cur = a.current_temperature;
+    const on = s.state === 'heat';
+    const busy = this._spaCur || (this._spaQ && this._spaQ.length);
+    const [kx, ky] = this._dialGeo(tgt || mn, mn, mx), [cx, cy] = this._dialGeo(cur || mn, mn, mx);
+    let rate = 0; const rs = cl.rate_sensor && this._st(cl.rate_sensor); if (rs) rate = parseFloat(rs.state) || 0;
+    let eta = '';
+    if (on && cur != null && tgt != null && cur < tgt) { if (rate > 0.2) { const m = Math.round((tgt - cur) / rate * 60); eta = `Ready in about ${Math.floor(m / 60)} h ${m % 60} min`; } else eta = 'Warming up…'; }
+    else if (on) eta = '✓ Ready';
+    const line = on ? `Heating to <b>${tgt}°</b> · ${a.hvac_action === 'heating' ? 'heater on' : 'heater idle'}` : `Resting · holds <b>${tgt}°</b> · heats in filter cycles`;
+    const jet = (e, n) => { const js = this._st(e); const pj = this._spaPending('jet:' + e); const o = pj ? pj.want === 'on' : js && js.state === 'on'; return `<button class="chip ${o ? 'sel' : ''}" data-act="jet" data-e="${e}">${n}</button>`; };
+    const jets = (cl.jets || []).map((j, k) => jet(j, 'Jet ' + (k + 1))).join('') + (cl.spa_light ? jet(cl.spa_light, 'Lights') : '');
+    const presets = (cl.presets || [32, 34, 36, 38]).map((t) => `<button class="chip ${+tgt === t ? 'sel' : ''}" data-act="spreset" data-i="${i}" data-v="${t}">${t}°</button>`).join('');
+    const fl = (cl.filters || []).map((f) => { const st = this._st(f); if (!st || st.state.charAt(0) !== '{') return null; try { const j = JSON.parse(st.state); const [h, m] = j.start.split(':').map(Number), [dh, dm] = j.duration.split(':').map(Number); const e = (h * 60 + m + dh * 60 + dm) % 1440; return j.start + '–' + String(Math.floor(e / 60)).padStart(2, '0') + ':' + String(e % 60).padStart(2, '0'); } catch (err) { return null; } }).filter(Boolean);
+    return `<div class="scrim" data-act="closesheet"><div class="sheet spa" role="dialog" aria-label="${cl.name} controls" data-stop="1">
+      <div class="sh"><div class="tt">${cl.name}${busy ? ' <span class="busy">sending to spa…</span>' : ''}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="spagrid">
+        <div class="dialcol">
+          <div class="dialrow"><button class="rb" data-act="tdown" data-i="${i}" aria-label="Lower">−</button>
+          <svg viewBox="0 0 240 230" class="dial" data-dial="${i}" data-min="${mn}" data-max="${mx}">
+            <defs><linearGradient id="dg" x1="0" x2="1"><stop offset="0" stop-color="#FF8A4C"/><stop offset="1" stop-color="#FFB27A"/></linearGradient></defs>
+            <path d="${this._dialArc(mn, mx, mn, mx)}" stroke="#3A2E28" stroke-width="16" fill="none" stroke-linecap="round"/>
+            <path data-arc d="${this._dialArc(mn, tgt || mn, mn, mx)}" stroke="url(#dg)" stroke-width="16" fill="none" stroke-linecap="round"/>
+            ${cur != null ? `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="#fff" opacity=".85"/>` : ''}
+            <circle data-knob cx="${kx.toFixed(1)}" cy="${ky.toFixed(1)}" r="14" fill="#fff" stroke="#1C1C22" stroke-width="4"/>
+            <text x="120" y="98" text-anchor="middle" fill="#C9B9AE" font-size="12" letter-spacing="1.2">WATER NOW</text>
+            <text x="120" y="146" text-anchor="middle" fill="#fff" font-size="50" font-weight="700">${cur != null ? cur + '°' : '—'}</text>
+            <text data-tgt x="120" y="176" text-anchor="middle" fill="#FFB27A" font-size="16" font-weight="600">target ${tgt}°</text>
+          </svg>
+          <button class="rb" data-act="tup" data-i="${i}" aria-label="Raise">+</button></div>
+          <div class="sline">${line}<small>${eta || '&nbsp;'}</small></div>
+          <div class="chips cen">${presets}</div>
+        </div>
+        <div class="sidecol">
+          <button class="mbtn ${on ? 'act' : ''}" data-act="sstart" data-i="${i}">${ICON.spa}<b>Start</b><span>Heat to ${cl.start_temp || 34}°</span></button>
+          <button class="mbtn ${!on ? 'act' : ''}" data-act="srest" data-i="${i}">${ICON.moon || ''}<b>Rest</b><span>Hold ${cl.rest_temp || 32}°</span></button>
+          <div class="label">Jets & lights</div><div class="chips">${jets}</div>
+          ${fl.length ? `<div class="label">Filter cycles</div><div class="fl">${fl.join(' · ')}</div>` : ''}
+        </div>
+      </div></div></div>`;
+  }
+  _onDialStart(e) {
+    const d = e.target.closest('[data-dial]'); if (!d) return;
+    e.preventDefault();
+    this._dial = { el: d, i: +d.dataset.dial, mn: +d.dataset.min, mx: +d.dataset.max, id: e.pointerId };
+    try { d.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    this._onDialMove(e);
+  }
+  _onDialMove(e) {
+    const g = this._dial; if (!g) return;
+    const r = g.el.getBoundingClientRect(); const sx = r.width / 240;
+    const x = (e.clientX - r.left) / sx - 120, y = (e.clientY - r.top) / sx - 120;
+    let ang = Math.atan2(y, x) * 180 / Math.PI; ang = (ang - 135 + 720) % 360; if (ang > 300) ang = 0; else if (ang > 270) ang = 270;
+    const t = Math.round((g.mn + ang / 270 * (g.mx - g.mn)) * 2) / 2; g.t = t;
+    const [kx, ky] = this._dialGeo(t, g.mn, g.mx);
+    const k = g.el.querySelector('[data-knob]'); k.setAttribute('cx', kx.toFixed(1)); k.setAttribute('cy', ky.toFixed(1));
+    g.el.querySelector('[data-arc]').setAttribute('d', this._dialArc(g.mn, t, g.mn, g.mx));
+    g.el.querySelector('[data-tgt]').textContent = 'target ' + t + '°';
+  }
+  _onDialEnd() {
+    const g = this._dial; this._dial = null; if (!g || g.t == null) return;
+    this._suppressClick = Date.now();
+    const e = this.config.climate[g.i].entity, t = g.t;
+    this._spaEnqueue({ key: 'temp', want: t, notBefore: Date.now() + 600, svc: ['climate', 'set_temperature', { entity_id: e, temperature: t }], done: (h) => h.states[e] && +h.states[e].attributes.temperature === t });
+    this._ptr = false; this._render();
   }
   _onClick(e) {
     if (this._suppressClick && Date.now() - this._suppressClick < 400) { this._suppressClick = 0; return; }
@@ -760,6 +851,13 @@ class HomeHubCard extends HTMLElement {
         } else this._call('climate', 'set_temperature', { entity_id: cl.entity, temperature: t });
         break;
       }
+      case 'spreset': {
+        const e = cl.entity, t = +el.dataset.v;
+        this._spaEnqueue({ key: 'temp', want: t, svc: ['climate', 'set_temperature', { entity_id: e, temperature: t }], done: (h) => h.states[e] && +h.states[e].attributes.temperature === t });
+        this._render(); break;
+      }
+      case 'sstart': this._call('script', 'turn_on', { entity_id: cl.start_script }); break;
+      case 'srest': this._call('script', 'turn_on', { entity_id: cl.rest_script }); break;
       case 'srange': {
         const e = cl.entity, want = el.dataset.v;
         this._spaEnqueue({ key: 'range', want, svc: ['climate', 'set_preset_mode', { entity_id: e, preset_mode: want }], done: (h) => h.states[e] && h.states[e].attributes.preset_mode === want });
