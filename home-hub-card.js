@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -202,6 +202,7 @@ class HomeHubCard extends HTMLElement {
   set hass(h) {
     const first = !this._hass;
     this._hass = h;
+    if (this._spaCur || (this._spaQ && this._spaQ.length)) this._spaPump();
     if (!this.shadowRoot) this._build();
     if (first) this._subscribeForecast();
     if (this.config.presence) {
@@ -215,6 +216,33 @@ class HomeHubCard extends HTMLElement {
   _st(id) { return this._hass && id ? this._hass.states[id] : undefined; }
   _num(id) { const s = this._st(id); const n = s ? parseFloat(s.state) : NaN; return isNaN(n) ? null : n; }
   _call(d, s, data) { return this._hass.callService(d, s, data || {}); }
+  // The Balboa ESPHome bridge holds ONE pending command and range / heat-mode are toggles,
+  // so spa changes are queued, sent one at a time, and each is confirmed before the next.
+  _spaEnqueue(item) {
+    if (this._spaCur && this._spaCur.key === item.key && this._spaCur.want === item.want) return;
+    this._spaQ = (this._spaQ || []).filter((q) => q.key !== item.key);
+    const ti = item.key === 'range' ? this._spaQ.findIndex((q) => q.key === 'temp') : -1;
+    if (ti > -1) this._spaQ.splice(ti, 0, item); else this._spaQ.push(item); // switch range before setting its temperature
+    this._spaPump();
+  }
+  _spaPending(key) { const q = (this._spaCur ? [this._spaCur] : []).concat(this._spaQ || []); return q.filter((x) => x.key === key).pop(); }
+  _spaPump() {
+    const now = Date.now();
+    if (this._spaCur) {
+      if (this._spaCur.done(this._hass) || now - this._spaCur.at > 25000) { this._spaCur = null; this._render(); }
+      else return;
+    }
+    while (this._spaQ && this._spaQ.length) {
+      const it = this._spaQ[0];
+      if (it.notBefore && now < it.notBefore) { clearTimeout(this._spaT); this._spaT = setTimeout(() => this._spaPump(), it.notBefore - now + 20); return; }
+      this._spaQ.shift();
+      if (it.done(this._hass)) continue;
+      it.at = now; this._spaCur = it;
+      this._call(...it.svc);
+      clearTimeout(this._spaT); this._spaT = setTimeout(() => this._spaPump(), 26000);
+      return;
+    }
+  }
 
   _build() {
     const root = this.attachShadow({ mode: 'open' });
@@ -427,7 +455,9 @@ class HomeHubCard extends HTMLElement {
       const on = s.state !== 'off' && s.state !== 'unavailable';
       const cur = s.attributes.current_temperature, tgt = s.attributes.temperature;
       const cls = on ? (cl.spa ? 'on-spa' : 'on-ac') : '';
-      const status = cl.spa ? (on ? 'Heating to ' + tgt + '°' : (s.attributes.preset_mode ? cap(s.attributes.preset_mode) + ' · heater off' : 'Heater off')) : (on ? cap(s.state) + ' · set ' + tgt + '°' : 'Off');
+      const rng = s.attributes.preset_mode === 'home' ? 'High' : s.attributes.preset_mode === 'eco' ? 'Low' : '';
+      const sending = cl.spa && (this._spaCur || (this._spaQ && this._spaQ.length));
+      const status = cl.spa ? (sending ? 'Sending to spa…' : (on ? 'Ready' : 'Rest') + ' · ' + (rng ? rng + ' ' : '') + tgt + '°') : (on ? cap(s.state) + ' · set ' + tgt + '°' : 'Off');
       return `<div class="tile ${cls}"><div class="tophead"><button class="pw" data-act="ctoggle" data-i="${i}" aria-label="${on ? 'Turn off' : 'Turn on'} ${cl.name}">${ICON.power}</button><span class="tmp">${cur != null ? Math.round(cur) + '°' : ''}</span></div><button class="body" data-act="csheet" data-i="${i}"><div class="nm">${cl.name}</div><div class="st">${status}</div></button></div>`;
     }).join('');
     const lights = c.lights.map((l, i) => {
@@ -644,13 +674,18 @@ class HomeHubCard extends HTMLElement {
   }
   _sheetHtml(i) {
     const cl = this.config.climate[i]; const s = this._st(cl.entity); if (!s) return '';
-    const on = s.state !== 'off';
-    const tgt = s.attributes.temperature;
+    let on = s.state !== 'off';
+    let tgt = s.attributes.temperature;
     let extra = '';
     if (cl.spa) {
-      const chips = (cl.jets || []).map((j, k) => { const js = this._st(j); const jo = js && js.state === 'on'; return `<button class="chip ${jo ? 'sel' : ''}" data-act="jet" data-e="${j}">Jet ${k + 1}</button>`; }).join('');
-      const ls = this._st(cl.spa_light); const lo = ls && ls.state === 'on';
-      extra = `<div><div class="label" style="margin-bottom:10px">Jets and lights</div><div class="chips">${chips}<button class="chip ${lo ? 'sel' : ''}" data-act="jet" data-e="${cl.spa_light}">Lights</button></div></div>`;
+      const pt = this._spaPending('temp'), pm = this._spaPending('mode'), pr = this._spaPending('range');
+      if (pt) tgt = pt.want; if (pm) on = pm.want !== 'off';
+      const rng = pr ? pr.want : s.attributes.preset_mode;
+      const busy = this._spaCur || (this._spaQ && this._spaQ.length);
+      extra += `<div><div class="label" style="margin-bottom:10px">Temperature range${busy ? ' · <span style="color:#FF9F6B">sending to spa…</span>' : ''}</div><div class="chips"><button class="chip ${rng === 'home' ? 'sel' : ''}" data-act="srange" data-i="${i}" data-v="home">High range</button><button class="chip ${rng === 'eco' ? 'sel' : ''}" data-act="srange" data-i="${i}" data-v="eco">Low range</button></div></div>`;
+      const chips = (cl.jets || []).map((j, k) => { const js = this._st(j); const pj = this._spaPending('jet:' + j); const jo = pj ? pj.want === 'on' : js && js.state === 'on'; return `<button class="chip ${jo ? 'sel' : ''}" data-act="jet" data-e="${j}">Jet ${k + 1}</button>`; }).join('');
+      const ls = this._st(cl.spa_light); const pl = this._spaPending('jet:' + cl.spa_light); const lo = pl ? pl.want === 'on' : ls && ls.state === 'on';
+      extra += `<div><div class="label" style="margin-bottom:10px">Jets and lights</div><div class="chips">${chips}<button class="chip ${lo ? 'sel' : ''}" data-act="jet" data-e="${cl.spa_light}">Lights</button></div></div>`;
     } else {
       const modes = (s.attributes.hvac_modes || []).filter((m) => m !== 'off');
       extra = `<div><div class="label" style="margin-bottom:10px">Mode</div><div class="chips">${modes.map((m) => `<button class="chip ${s.state === m ? 'sel' : ''}" data-act="mode" data-v="${m}">${cap(m.replace('_', ' '))}</button>`).join('')}</div></div>`;
@@ -658,8 +693,8 @@ class HomeHubCard extends HTMLElement {
     const accent = cl.spa ? '#FF9F6B' : '#8EC1FF';
     return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${cl.name} controls" data-stop="1">
       <div class="sh"><div class="tt">${cl.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
-      <div class="prow"><span>${cl.spa ? (on ? 'Heater on' : 'Heater off') + (s.attributes.current_temperature != null ? ' · water ' + s.attributes.current_temperature + '°' : '') : (on ? 'Running' : 'Off') + (s.attributes.current_temperature != null ? ' · room ' + s.attributes.current_temperature + '°' : '')}</span>
-        <button class="pbtn" data-act="ctoggle" data-i="${i}" style="background:${on ? '#2C2C34' : accent};color:${on ? '#F5F5F7' : '#08121F'}">${on ? 'Turn off' : 'Turn on'}</button></div>
+      <div class="prow"><span>${cl.spa ? (on ? 'Ready mode' : 'Rest mode') + (s.attributes.current_temperature != null ? ' · water ' + s.attributes.current_temperature + '°' : '') : (on ? 'Running' : 'Off') + (s.attributes.current_temperature != null ? ' · room ' + s.attributes.current_temperature + '°' : '')}</span>
+        <button class="pbtn" data-act="ctoggle" data-i="${i}" style="background:${on ? '#2C2C34' : accent};color:${on ? '#F5F5F7' : '#08121F'}">${cl.spa ? (on ? 'Switch to Rest' : 'Switch to Ready') : on ? 'Turn off' : 'Turn on'}</button></div>
       <div class="stepper"><button data-act="tdown" data-i="${i}" aria-label="Lower temperature">−</button><div class="v"><span>${cl.spa ? 'Target water' : 'Set to'}</span><b>${tgt != null ? tgt : '—'}°</b></div><button data-act="tup" data-i="${i}" aria-label="Raise temperature">+</button></div>
       ${extra}</div></div>`;
   }
@@ -676,7 +711,12 @@ class HomeHubCard extends HTMLElement {
       case 'ltoggle': this._call('light', 'toggle', { entity_id: c.lights[i].entity }); break;
       case 'ctoggle': {
         const s = this._st(cl.entity);
-        if (cl.spa) this._call('climate', 'set_hvac_mode', { entity_id: cl.entity, hvac_mode: s.state === 'off' ? 'heat' : 'off' });
+        if (cl.spa) {
+          const pend = this._spaPending('mode'); const cur = pend ? pend.want : s.state;
+          const want = cur === 'off' ? 'heat' : 'off', e = cl.entity;
+          this._spaEnqueue({ key: 'mode', want, svc: ['climate', 'set_hvac_mode', { entity_id: e, hvac_mode: want }], done: (h) => h.states[e] && h.states[e].state === want });
+          this._render();
+        }
         else this._call('climate', s.state === 'off' ? 'turn_on' : 'turn_off', { entity_id: cl.entity });
         break;
       }
@@ -708,14 +748,32 @@ class HomeHubCard extends HTMLElement {
       case 'hstyle': this._call('input_select', 'select_option', { entity_id: c.halloween_style, option: el.dataset.v }); break;
       case 'closesheet': this._sheet = null; break;
       case 'tup': case 'tdown': {
-        const s = this._st(cl.entity); const step = s.attributes.target_temp_step || (cl.spa ? 1 : 1);
-        const t = (s.attributes.temperature || 0) + (act === 'tup' ? step : -step);
+        const s = this._st(cl.entity); const step = s.attributes.target_temp_step || 1;
+        const pend = cl.spa ? this._spaPending('temp') : null;
+        const base = pend ? pend.want : (s.attributes.temperature || 0);
         const mn = s.attributes.min_temp ?? 0, mx = s.attributes.max_temp ?? 100;
-        this._call('climate', 'set_temperature', { entity_id: cl.entity, temperature: Math.max(mn, Math.min(mx, t)) });
+        const t = Math.max(mn, Math.min(mx, base + (act === 'tup' ? step : -step)));
+        if (cl.spa) {
+          const e = cl.entity;
+          this._spaEnqueue({ key: 'temp', want: t, notBefore: Date.now() + 1500, svc: ['climate', 'set_temperature', { entity_id: e, temperature: t }], done: (h) => h.states[e] && +h.states[e].attributes.temperature === t });
+          this._render();
+        } else this._call('climate', 'set_temperature', { entity_id: cl.entity, temperature: t });
+        break;
+      }
+      case 'srange': {
+        const e = cl.entity, want = el.dataset.v;
+        this._spaEnqueue({ key: 'range', want, svc: ['climate', 'set_preset_mode', { entity_id: e, preset_mode: want }], done: (h) => h.states[e] && h.states[e].attributes.preset_mode === want });
+        this._render();
         break;
       }
       case 'mode': this._call('climate', 'set_hvac_mode', { entity_id: c.climate[this._sheet].entity, hvac_mode: el.dataset.v }); break;
-      case 'jet': this._call('homeassistant', 'toggle', { entity_id: el.dataset.e }); break;
+      case 'jet': {
+        const e = el.dataset.e, st0 = this._st(e); const pend = this._spaPending('jet:' + e);
+        const want = (pend ? pend.want : st0 && st0.state) === 'on' ? 'off' : 'on', dom = e.split('.')[0];
+        this._spaEnqueue({ key: 'jet:' + e, want, svc: [dom, 'turn_' + want, { entity_id: e }], done: (h) => h.states[e] && h.states[e].state === want });
+        this._render();
+        break;
+      }
       case 'garage': {
         const g = this._st(c.garage); const open = ['open', 'opening'].includes(g.state);
         this._call('cover', open ? 'close_cover' : 'open_cover', { entity_id: c.garage });
