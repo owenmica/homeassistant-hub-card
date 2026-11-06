@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -25,6 +25,7 @@ const DEFAULTS = {
   music: null,
   garage: null,
   outdoor_garage: null,
+  dehumidifier: null,
   seasons: { halloween: ['10-24', '11-01'], christmas: ['12-01', '01-06'] }
 };
 
@@ -42,6 +43,7 @@ function inRange(now, a, b) { const x = md(now); return a <= b ? (x >= a && x <=
 function dayDiff(a, b) { return Math.round((new Date(a.getFullYear(), a.getMonth(), a.getDate()) - new Date(b.getFullYear(), b.getMonth(), b.getDate())) / 86400000); }
 
 const ICON = {
+  drop: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/></svg>',
   power: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>',
   bulb: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>',
   garage: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-6 9 6v12"/><path d="M7 21v-8h10v8M7 16h10"/></svg>',
@@ -121,6 +123,9 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .tile.on-light{background:#FFD27A;color:#16130A}.tile.on-light .st{color:#3D3312}.tile.on-light .ic{color:#16130A}
 .tile.on-ac{background:#8EC1FF;color:#08121F}.tile.on-ac .st{color:#1E2E44}
 .tile.on-spa{background:#FF9F6B;color:#1F0E04}.tile.on-spa .st{color:#4A2610}
+.tile.on-dry{background:#7FD8C9;color:#06201B}.tile.on-dry .st{color:#16463D}.tile.on-dry .pw{background:rgba(0,0,0,.14);color:inherit}
+.tile.on-laundry{background:#C9A8FF;color:#160A2A}.tile.on-laundry .st{color:#3A2466}.tile.on-laundry .pw{background:rgba(0,0,0,.14);color:inherit}
+.chips.dmodes .chip{flex:1 1 0;text-align:center}.chips.dmodes .chip.sel{background:#7FD8C9;color:#06201B}.chips.dmodes .chip.sel.lau{background:#C9A8FF;color:#160A2A}
 .tile .tophead{display:flex;justify-content:space-between;align-items:center;width:100%}
 .pw{border:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#2C2C34;color:#C7C7CC}
 .on-ac .pw,.on-spa .pw,.on-light .pw{background:rgba(0,0,0,.14);color:inherit}
@@ -472,6 +477,12 @@ class HomeHubCard extends HTMLElement {
       const status = cl.spa ? (sending ? 'Sending to spa…' : (on ? 'Heating · ' : 'Resting · ') + tgt + '°') : (on ? cap(s.state) + ' · set ' + tgt + '°' : 'Off');
       return `<div class="tile ${cls}"><div class="tophead"><button class="pw" data-act="ctoggle" data-i="${i}" aria-label="${on ? 'Turn off' : 'Turn on'} ${cl.name}">${ICON.power}</button><span class="tmp">${cur != null ? Math.round(cur) + '°' : ''}</span></div><button class="body" data-act="csheet" data-i="${i}"><div class="nm">${cl.name}</div><div class="st">${status}</div></button></div>`;
     }).join('');
+    let dehum = '';
+    const dh = this._dehum();
+    if (dh) {
+      const cls = dh.mode === 'laundry' ? 'on-laundry' : dh.mode === 'standard' ? 'on-dry' : '';
+      dehum = `<div class="tile ${cls}"><div class="tophead"><button class="pw" data-act="dpower" aria-label="${dh.on ? 'Turn off' : 'Turn on'} ${dh.name}">${ICON.power}</button><span class="tmp">${dh.hum != null ? Math.round(dh.hum) + '%' : ''}</span></div><button class="body" data-act="dsheet"><div class="nm">${dh.name}</div><div class="st">${dh.status}</div></button></div>`;
+    }
     const lights = c.lights.map((l, i) => {
       const s = this._st(l.entity); if (!s) return '';
       const on = s.state === 'on';
@@ -511,6 +522,7 @@ class HomeHubCard extends HTMLElement {
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'M') sheet = this._mediaSheet(+this._sheet.slice(1));
     else if (this._sheet === 'B') sheet = this._browseSheet();
+    else if (this._sheet === 'D') sheet = this._dehumSheet();
     else if (this._sheet != null) sheet = this._sheetHtml(this._sheet);
 
     return `
@@ -538,7 +550,7 @@ class HomeHubCard extends HTMLElement {
     <div class="card"><div class="label">Next days</div><div class="fc">${fc || '<div class="n">Forecast loading…</div>'}</div></div>
   </div>
   <div class="col">
-    <div class="sec">Climate</div><div class="tiles t4">${climate}</div>
+    <div class="sec">Climate</div><div class="tiles ${dehum ? 't5' : 't4'}">${climate}${dehum}</div>
     <div class="sec">Lights</div><div class="tiles t5">${lights}</div>
     ${media || music ? `<div class="sec">Media</div><div class="tiles t4">${music}${media}</div>` : ''}
     ${c.garage ? `<div class="sec">Garage</div>
@@ -683,6 +695,45 @@ class HomeHubCard extends HTMLElement {
     if (el.dataset.in === 'ct') this._call('light', 'turn_on', { entity_id: l.entity, color_temp_kelvin: +el.value });
     if (el.dataset.in === 'vol') this._call('media_player', 'volume_set', { entity_id: this.config.media[+el.dataset.i].entity, volume_level: +el.value / 100 });
     this._ptr = false;
+  }
+  // Dehumidifier: state is read from the humidifier entity and the laundry timer; every change
+  // goes through the mode script (standard / laundry / off) so HA's automations stay in charge.
+  _dehum() {
+    const d = this.config.dehumidifier; if (!d || !d.entity) return null;
+    const s = this._st(d.entity); if (!s) return null;
+    const t = this._st(d.laundry_timer);
+    const on = s.state === 'on';
+    const tgt = s.attributes.humidity;
+    const timerOn = !!(t && t.state === 'active');
+    const mode = !on ? 'off' : (timerOn || (tgt != null && tgt <= 40)) ? 'laundry' : 'standard';
+    let left = null;
+    if (timerOn && t.attributes.finishes_at) {
+      const ms = new Date(t.attributes.finishes_at) - Date.now();
+      if (ms > 0) { const m = Math.ceil(ms / 60000); left = (m >= 60 ? Math.floor(m / 60) + 'h ' : '') + (m % 60) + 'm left'; }
+    }
+    const hum = d.humidity_sensor ? this._num(d.humidity_sensor) : s.attributes.current_humidity;
+    const pend = this._dPend && Date.now() - this._dPend.at < 30000 && this._dPend.mode !== mode ? this._dPend.mode : null;
+    if (!pend) this._dPend = null;
+    const status = pend ? 'Sending…' : s.state === 'unavailable' ? 'Unavailable'
+      : mode === 'off' ? 'Off' : mode === 'laundry' ? 'Laundry' + (left ? ' · ' + left : '') : 'Standard · ' + (tgt != null ? tgt : 55) + '%';
+    return { d, s, on, mode, pend, left, hum, tgt, status, name: d.name || 'Dehumidifier' };
+  }
+  _dehumSheet() {
+    const dh = this._dehum(); if (!dh) return '';
+    const cur = dh.pend || dh.mode;
+    const opt = [['standard', 'Standard · 55%', ''], ['laundry', 'Smart laundry · 6 h', 'lau'], ['off', 'Off', '']];
+    const chips = opt.map(([v, l, x]) => `<button class="chip ${x} ${cur === v ? 'sel' : ''}" data-act="dmode" data-v="${v}">${l}</button>`).join('');
+    const line = dh.mode === 'laundry' ? 'Drying laundry' + (dh.left ? ' · ' + dh.left : '') + '. Then back to Standard and off.'
+      : dh.mode === 'standard' ? 'Keeping the room at ' + (dh.tgt != null ? dh.tgt : 55) + '%.' : 'Off. Turns on by itself when the room gets humid.';
+    return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${dh.name} mode" data-stop="1">
+      <div class="sh"><div class="tt">${dh.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="prow"><span>${dh.hum != null ? 'Room ' + Math.round(dh.hum) + '% · ' : ''}${line}</span></div>
+      <div><div class="label" style="margin-bottom:10px">Mode</div><div class="chips dmodes">${chips}</div></div></div></div>`;
+  }
+  _dehumSet(mode) {
+    const d = this.config.dehumidifier;
+    this._dPend = { mode, at: Date.now() };
+    this._call('script', 'turn_on', { entity_id: d.mode_script, variables: { mode } });
   }
   _sheetHtml(i) {
     const cl = this.config.climate[i]; const s = this._st(cl.entity); if (!s) return '';
@@ -838,6 +889,9 @@ class HomeHubCard extends HTMLElement {
       case 'scenesheet': this._sheet = 'scene'; break;
       case 'hstyle': this._call('input_select', 'select_option', { entity_id: c.halloween_style, option: el.dataset.v }); break;
       case 'closesheet': this._sheet = null; break;
+      case 'dsheet': this._sheet = 'D'; break;
+      case 'dpower': { const dh = this._dehum(); if (dh) this._dehumSet(dh.on ? 'off' : 'standard'); break; }
+      case 'dmode': this._dehumSet(el.dataset.v); this._sheet = null; break;
       case 'tup': case 'tdown': {
         const s = this._st(cl.entity); const step = s.attributes.target_temp_step || 1;
         const pend = cl.spa ? this._spaPending('temp') : null;
