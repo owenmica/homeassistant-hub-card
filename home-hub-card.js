@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.5.1';
+const VERSION = '1.5.2';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -705,7 +705,10 @@ class HomeHubCard extends HTMLElement {
     const on = s.state === 'on';
     const tgt = s.attributes.humidity;
     const timerOn = !!(t && t.state === 'active');
-    const mode = !on ? 'off' : (timerOn || (tgt != null && tgt <= 40)) ? 'laundry' : 'standard';
+    // Local control (LocalTuya) exposes the machine's real mode; older cloud entities only expose the target.
+    const devMode = s.attributes.mode;
+    const isLaundry = devMode != null ? devMode === 'laundry' : (tgt != null && tgt <= 40);
+    const mode = !on ? 'off' : (timerOn || isLaundry) ? 'laundry' : 'standard';
     let left = null;
     if (timerOn && t.attributes.finishes_at) {
       const ms = new Date(t.attributes.finishes_at) - Date.now();
@@ -715,17 +718,17 @@ class HomeHubCard extends HTMLElement {
     const pend = this._dPend && Date.now() - this._dPend.at < 30000 && this._dPend.mode !== mode ? this._dPend.mode : null;
     if (!pend) this._dPend = null;
     const status = pend ? 'Sending…' : s.state === 'unavailable' ? 'Unavailable'
-      : mode === 'off' ? (tgt != null && tgt <= 40 ? 'Off · still in Laundry' : 'Off') : mode === 'laundry' ? 'Laundry' + (left ? ' · ' + left : '') : 'Standard · ' + (tgt != null ? tgt : 55) + '%';
-    return { d, s, on, mode, pend, left, hum, tgt, status, name: d.name || 'Dehumidifier' };
+      : mode === 'off' ? (isLaundry ? 'Off · set to Laundry' : 'Off') : mode === 'laundry' ? 'Laundry' + (left ? ' · ' + left : '') : 'Standard · ' + (tgt != null ? tgt : 55) + '%';
+    return { d, s, on, mode, pend, left, hum, tgt, status, isLaundry, local: devMode != null, name: d.name || 'Dehumidifier' };
   }
   _dehumSheet() {
     const dh = this._dehum(); if (!dh) return '';
     const cur = dh.pend || dh.mode;
     const opt = [['standard', 'Standard · 55%', ''], ['laundry', 'Smart laundry · 6 h', 'lau'], ['off', 'Off', '']];
     const chips = opt.map(([v, l, x]) => `<button class="chip ${x} ${cur === v ? 'sel' : ''}" data-act="dmode" data-v="${v}">${l}</button>`).join('');
-    const stuck = dh.tgt != null && dh.tgt <= 40;
-    const line = dh.mode === 'laundry' ? 'Drying laundry' + (dh.left ? ' · ' + dh.left : '') + '. To end it early or go back to Standard, press Smart Humidity on the machine.'
-      : stuck ? 'Off, but the machine is still set to Smart Laundry. Press Smart Humidity on it so it can run automatically again.'
+    const stuck = !dh.on && dh.isLaundry;
+    const line = dh.mode === 'laundry' ? 'Drying laundry' + (dh.left ? ' · ' + dh.left : '') + (dh.local ? '. Afterwards it goes back to Standard and switches off.' : '. To end it early or go back to Standard, press Smart Humidity on the machine.')
+      : stuck ? (dh.local ? 'Off, still set to Smart Laundry. Tap Standard to switch it back.' : 'Off, but the machine is still set to Smart Laundry. Press Smart Humidity on it so it can run automatically again.')
       : dh.mode === 'standard' ? 'Keeping the room at ' + (dh.tgt != null ? dh.tgt : 55) + '%.' : 'Off. Turns on by itself when the room gets humid.';
     return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="${dh.name} mode" data-stop="1">
       <div class="sh"><div class="tt">${dh.name}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
