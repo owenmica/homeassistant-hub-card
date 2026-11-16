@@ -16,3 +16,27 @@ lights:
     name: Living Room
 garage: cover.garage
 ```
+
+## Alerts
+
+One red tile appears at the top of the dashboard while any alert is active and disappears when all are resolved. Tap it to see the list.
+
+```yaml
+alerts:
+  - entity: binary_sensor.water_leak      # active while "on" (default)
+    name: Water leak
+    text: Under the sink
+  - entity: sensor.filter_life            # numeric: below / above
+    name: Purifier filter
+    below: 6
+  - entity: sensor.dishwasher_state       # one state or a list
+    name: Dishwasher
+    state: finished
+  - entity: event.backup                  # match an attribute instead of the state
+    attribute: event_type
+    state: failed
+    name: Backup failed
+  - entity: camera.garage                 # active while unavailable
+    name: Garage camera
+    unavailable: true
+```

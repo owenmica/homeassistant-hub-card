@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.5.2';
+const VERSION = '1.6.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -98,6 +98,14 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .grid{display:grid;grid-template-columns:minmax(300px,340px) minmax(0,1fr);gap:20px;flex:1;min-height:0}
 .col{display:flex;flex-direction:column;gap:16px;min-width:0}
 .card{background:#1C1C22;border-radius:28px;padding:20px 22px}
+.card.alert{display:flex;align-items:center;gap:14px;width:100%;border:1.5px solid #FF453A;background:#3A1416;color:#F5F5F7;text-align:left;font:inherit;min-height:76px}
+.card.alert .aic{flex:none;width:44px;height:44px;border-radius:50%;background:#FF453A;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;line-height:1}
+.card.alert .ab{flex:1;min-width:0}.card.alert .an{font-size:18px;font-weight:600;color:#FF6961}.card.alert .as{font-size:14px;color:#E5B5B2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.alert .ago{flex:none;font-size:22px;color:#FF6961}
+.alist{display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto}
+.alist .ar{display:flex;align-items:center;gap:12px;background:#3A1416;border-radius:18px;padding:14px 16px}
+.alist .ar .dot{flex:none;width:10px;height:10px;border-radius:50%;background:#FF453A}
+.alist .ar .an{font-size:17px;font-weight:600}.alist .ar .as{font-size:14px;color:#E5B5B2}
 .label{font-size:13px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#A1A1A8}
 .energy{display:flex;gap:20px;align-items:center}
 .rows{display:flex;flex-direction:column;gap:10px;flex:1}
@@ -233,6 +241,40 @@ class HomeHubCard extends HTMLElement {
   }
   _st(id) { return this._hass && id ? this._hass.states[id] : undefined; }
   _num(id) { const s = this._st(id); const n = s ? parseFloat(s.state) : NaN; return isNaN(n) ? null : n; }
+  _esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+  // Alerts: config.alerts = [{ entity, name, text, attribute, state, below, above, unavailable }].
+  // An alert is active while its entity matches; it drops off the list by itself when it stops matching.
+  _alerts() {
+    const out = [];
+    (this.config.alerts || []).forEach((a) => {
+      if (!a || !a.entity) return;
+      const s = this._st(a.entity);
+      if (!s) return;
+      const down = s.state === 'unavailable';
+      const raw = a.attribute ? s.attributes[a.attribute] : s.state;
+      let on = false, val = raw;
+      if (down) { on = !!a.unavailable; val = 'offline'; }
+      else if (a.below != null || a.above != null) {
+        const n = parseFloat(raw);
+        if (!isNaN(n)) {
+          on = (a.below == null || n < a.below) && (a.above == null || n > a.above);
+          const u = !a.attribute && s.attributes.unit_of_measurement ? s.attributes.unit_of_measurement : '';
+          val = n + (u === '%' ? '%' : (u ? ' ' + u : ''));
+        }
+      } else if (a.state != null) {
+        const want = (Array.isArray(a.state) ? a.state : [a.state]).map(String);
+        on = want.includes(String(raw));
+      } else if (!a.unavailable) on = String(raw) === 'on';
+      if (on) out.push({ name: a.name || s.attributes.friendly_name || a.entity, text: a.text || (down ? 'Offline' : cap(String(val).replace(/_/g, ' '))) });
+    });
+    return out;
+  }
+  _alertSheet(list) {
+    const rows = list.map((a) => `<div class="ar"><span class="dot"></span><div><div class="an">${this._esc(a.name)}</div><div class="as">${this._esc(a.text)}</div></div></div>`).join('');
+    return `<div class="scrim" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Alerts" data-stop="1">
+      <div class="sh"><div class="tt">${list.length} alert${list.length === 1 ? '' : 's'}</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      <div class="alist">${rows}</div></div></div>`;
+  }
   _call(d, s, data) { return this._hass.callService(d, s, data || {}); }
   // The Balboa ESPHome bridge holds ONE pending command and range / heat-mode are toggles,
   // so spa changes are queued, sent one at a time, and each is confirmed before the next.
@@ -518,7 +560,10 @@ class HomeHubCard extends HTMLElement {
     const ogs = og ? og.state : 'unknown';
     const prompt = this._prompt && og && ogs === 'closed';
     let sheet = '';
-    if (this._sheet === 'scene') sheet = this._sceneSheet();
+    const alerts = this._alerts();
+    if (this._sheet === 'A' && !alerts.length) this._sheet = null;
+    if (this._sheet === 'A') sheet = this._alertSheet(alerts);
+    else if (this._sheet === 'scene') sheet = this._sceneSheet();
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'M') sheet = this._mediaSheet(+this._sheet.slice(1));
     else if (this._sheet === 'B') sheet = this._browseSheet();
@@ -537,6 +582,7 @@ class HomeHubCard extends HTMLElement {
 </div>
 <div class="grid">
   <div class="col">
+    ${alerts.length ? `<button class="card alert" data-act="alertsheet" aria-label="${alerts.length} alert${alerts.length === 1 ? '' : 's'}, show details"><span class="aic">!</span><span class="ab"><div class="an">${alerts.length} alert${alerts.length === 1 ? '' : 's'}</div><div class="as">${this._esc(alerts.map((a) => a.name).join(' · '))}</div></span><span class="ago">›</span></button>` : ''}
     <div class="card energy">
       <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Home battery ${pct ?? '—'} percent"><circle cx="56" cy="56" r="44" fill="none" stroke="#2C2C34" stroke-width="12"/><circle cx="56" cy="56" r="44" fill="none" stroke="${low ? '#FFB340' : '#34C759'}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circ}" transform="rotate(-90 56 56)"/><text x="56" y="56" text-anchor="middle" dominant-baseline="central" fill="#F5F5F7" font-size="26" font-weight="600" font-family="Inter,system-ui">${pct !== null ? Math.round(pct) + '%' : '—'}</text></svg>
       <div class="rows"><div class="label">Energy</div>
@@ -892,6 +938,7 @@ class HomeHubCard extends HTMLElement {
       case 'mmute': { const m = c.media[i], s = this._st(m.entity); this._call('media_player', 'volume_mute', { entity_id: m.entity, is_volume_muted: !s.attributes.is_volume_muted }); break; }
       case 'lcolor': this._call('light', 'turn_on', { entity_id: c.lights[i].entity, rgb_color: el.dataset.rgb.split(',').map(Number) }); break;
       case 'scenesheet': this._sheet = 'scene'; break;
+      case 'alertsheet': this._sheet = 'A'; break;
       case 'hstyle': this._call('input_select', 'select_option', { entity_id: c.halloween_style, option: el.dataset.v }); break;
       case 'closesheet': this._sheet = null; break;
       case 'dsheet': this._sheet = 'D'; break;
