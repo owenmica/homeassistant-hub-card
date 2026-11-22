@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.6.1';
+const VERSION = '1.7.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -174,6 +174,9 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .mbtn.act{background:#FF8A4C;color:#1A0E06}
 .sidecol .label{margin-top:6px}.fl{font-size:15px;color:#E2D3C8;font-variant-numeric:tabular-nums}
 .chips.fx{max-height:180px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.tstep{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;background:rgba(255,255,255,.05);border-radius:16px;padding:8px}
+.rb2{border:none;width:48px;height:48px;border-radius:50%;background:#2F2F38;color:#F5F5F7;font-size:24px;flex:none}.rb2[disabled]{opacity:.35}
+.tval{text-align:center;font-size:16px}.tval b{font-size:20px}.tval small{display:block;color:#8E8E93;font-size:13px;margin-top:2px}
 .mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
 .mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
@@ -530,7 +533,8 @@ class HomeHubCard extends HTMLElement {
       const s = this._st(l.entity); if (!s) return '';
       const on = s.state === 'on';
       const br = s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) + '%' : '';
-      const st = s.state === 'unavailable' ? 'Unavailable' : on ? 'On' + (br ? ' · ' + br : '') : 'Off';
+      const tl = on ? this._timerLeft(l.timer) : 0;
+      const st = s.state === 'unavailable' ? 'Unavailable' : on ? (tl ? 'Off in ' + this._fmtLeft(tl) : 'On' + (br ? ' · ' + br : '')) : 'Off';
       const dim = (s.attributes.supported_color_modes || []).some((m) => m !== 'onoff');
       const pct = on ? (s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) : 100) : 0;
       return `<div class="tile ${dim ? 'stile' : ''} ${on ? (dim ? 'on-light on-dim' : 'on-light') : ''}" ${dim ? `data-slide="light" data-i="${i}"` : ''}>${dim ? `<div class="fillbar" style="width:${pct}%"></div>` : ''}<button class="pw lpw" data-act="ltoggle" data-i="${i}" aria-pressed="${on}" aria-label="${on ? 'Turn off' : 'Turn on'} ${l.name}">${ICON.bulb}</button><button class="body" data-act="lsheet" data-i="${i}"><div class="nm">${l.name}</div><div class="st" data-lvl>${st}</div></button></div>`;
@@ -619,6 +623,28 @@ class HomeHubCard extends HTMLElement {
       <div class="prow"><span>Auto follows the time, weather and season.</span><button class="pbtn" data-act="sleep" style="background:#2C2C34;color:#F5F5F7">Show now</button></div>
     </div></div>`;
   }
+  _timerLeft(id) {
+    const t = id && this._st(id); if (!t || t.state !== 'active' || !t.attributes.finishes_at) return 0;
+    return Math.max(0, new Date(t.attributes.finishes_at).getTime() - Date.now());
+  }
+  _fmtLeft(ms) { const m = Math.round(ms / 60000); return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; }
+  _setTimer(i, ms) {
+    const l = this.config.lights[i]; if (!l.timer) return;
+    if (ms <= 0) { this._call('timer', 'cancel', { entity_id: l.timer }); return; }
+    const sec = Math.round(ms / 1000), hh = String(Math.floor(sec / 3600)).padStart(2, '0'), mm = String(Math.floor(sec % 3600 / 60)).padStart(2, '0'), ss = String(sec % 60).padStart(2, '0');
+    const st = this._st(l.entity);
+    if (st && st.state !== 'on') this._call('homeassistant', 'turn_on', { entity_id: l.entity });
+    this._call('timer', 'start', { entity_id: l.timer, duration: `${hh}:${mm}:${ss}` });
+  }
+  _timerBlock(i) {
+    const l = this.config.lights[i]; if (!l.timer || !this._st(l.timer)) return '';
+    const left = this._timerLeft(l.timer);
+    const at = left ? new Date(Date.now() + left).toTimeString().slice(0, 5) : '';
+    const pre = (l.timer_presets || [1, 2, 3, 4]);
+    return `<div><div class="label" style="margin-bottom:10px">Turn off after</div>
+      <div class="chips"><button class="chip ${!left ? 'sel' : ''}" data-act="tnone" data-i="${i}">No timer</button>${pre.map((h) => `<button class="chip" data-act="tset" data-i="${i}" data-h="${h}">${h} h</button>`).join('')}</div>
+      <div class="tstep"><button class="rb2" data-act="tminus" data-i="${i}" aria-label="One hour less" ${left ? '' : 'disabled'}>−</button><div class="tval">${left ? `Off at <b>${at}</b><small>in ${this._fmtLeft(left)}</small>` : '<b>No timer</b><small>stays on until you turn it off</small>'}</div><button class="rb2" data-act="tplus" data-i="${i}" aria-label="One hour more">+</button></div></div>`;
+  }
   _lightSheet(i) {
     const l = this.config.lights[i]; const s = this._st(l.entity); if (!s) return '';
     const on = s.state === 'on', a = s.attributes;
@@ -639,7 +665,8 @@ class HomeHubCard extends HTMLElement {
       ${canTemp ? `<div class="slider"><div class="sl"><span>Warm to cool</span><b data-out="ct">${k} K</b></div><input type="range" min="${kmin}" max="${kmax}" step="50" value="${k}" data-in="ct" data-i="${i}" aria-label="Colour temperature" style="--trk:linear-gradient(90deg,#FFB35C,#FFF4E0,#CFE4FF)"></div>` : ''}
       ${canColor ? `<div><div class="label" style="margin-bottom:10px">Colour</div><div class="chips">${cols.map((c) => `<button class="sw ${rgb === c[1].join(',') ? 'sel' : ''}" style="background:${c[0]}" data-act="lcolor" data-i="${i}" data-rgb="${c[1].join(',')}" aria-label="Colour ${c[0]}"></button>`).join('')}</div></div>` : ''}
       ${(a.effect_list || []).length ? `<div><div class="label" style="margin-bottom:10px">Effects</div><div class="chips fx">${(l.effects || a.effect_list).map((f) => `<button class="chip ${a.effect === f ? 'sel' : ''}" data-act="leffect" data-i="${i}" data-v="${String(f).replace(/"/g, '&quot;')}">${f === 'none' ? 'No effect' : cap(String(f).replace(/_/g, ' ')).replace(/</g, '&lt;')}</button>`).join('')}</div></div>` : ''}
-      ${!canDim ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
+      ${!canDim && !l.timer ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
+      ${this._timerBlock(i)}
     </div></div>`;
   }
   _mediaSheet(i) {
@@ -901,7 +928,11 @@ class HomeHubCard extends HTMLElement {
     switch (act) {
       case 'sleep': this._ptr = false; this._sleepNow(); return;
       case 'scene': this._call('input_select', 'select_option', { entity_id: c.scene_select, option: el.dataset.v }); break;
-      case 'ltoggle': this._call('light', 'toggle', { entity_id: c.lights[i].entity }); break;
+      case 'ltoggle': { const ent = c.lights[i].entity; this._call(ent.split('.')[0] === 'light' ? 'light' : 'homeassistant', 'toggle', { entity_id: ent }); break; }
+      case 'tnone': this._setTimer(i, 0); break;
+      case 'tset': this._setTimer(i, +el.dataset.h * 3600000); break;
+      case 'tplus': { const left = this._timerLeft(c.lights[i].timer); this._setTimer(i, (left ? left : 0) + 3600000); break; }
+      case 'tminus': { const left = this._timerLeft(c.lights[i].timer); this._setTimer(i, left - 3600000); break; }
       case 'ctoggle': {
         const s = this._st(cl.entity);
         if (cl.spa && cl.start_script && cl.rest_script) {
