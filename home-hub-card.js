@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -173,6 +173,7 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .mbtn b{font-weight:600}.mbtn span{margin-left:auto;font-size:14px;opacity:.75}.mbtn svg{width:22px;height:22px}
 .mbtn.act{background:#FF8A4C;color:#1A0E06}
 .sidecol .label{margin-top:6px}.fl{font-size:15px;color:#E2D3C8;font-variant-numeric:tabular-nums}
+.chips.fx{max-height:180px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
 .mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
@@ -637,6 +638,7 @@ class HomeHubCard extends HTMLElement {
       ${canDim ? `<div class="slider"><div class="sl"><span>Brightness</span><b data-out="br">${br}%</b></div><input type="range" min="1" max="100" step="1" value="${br || 1}" data-in="br" data-i="${i}" aria-label="Brightness" style="--trk:linear-gradient(90deg,#3A3420,#FFD27A)"></div>` : ''}
       ${canTemp ? `<div class="slider"><div class="sl"><span>Warm to cool</span><b data-out="ct">${k} K</b></div><input type="range" min="${kmin}" max="${kmax}" step="50" value="${k}" data-in="ct" data-i="${i}" aria-label="Colour temperature" style="--trk:linear-gradient(90deg,#FFB35C,#FFF4E0,#CFE4FF)"></div>` : ''}
       ${canColor ? `<div><div class="label" style="margin-bottom:10px">Colour</div><div class="chips">${cols.map((c) => `<button class="sw ${rgb === c[1].join(',') ? 'sel' : ''}" style="background:${c[0]}" data-act="lcolor" data-i="${i}" data-rgb="${c[1].join(',')}" aria-label="Colour ${c[0]}"></button>`).join('')}</div></div>` : ''}
+      ${(a.effect_list || []).length ? `<div><div class="label" style="margin-bottom:10px">Effects</div><div class="chips fx">${(l.effects || a.effect_list).map((f) => `<button class="chip ${a.effect === f ? 'sel' : ''}" data-act="leffect" data-i="${i}" data-v="${String(f).replace(/"/g, '&quot;')}">${f === 'none' ? 'No effect' : cap(String(f).replace(/_/g, ' ')).replace(/</g, '&lt;')}</button>`).join('')}</div></div>` : ''}
       ${!canDim ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
     </div></div>`;
   }
@@ -916,6 +918,7 @@ class HomeHubCard extends HTMLElement {
       case 'csheet': this._sheet = i; break;
       case 'lsheet': this._sheet = 'L' + i; break;
       case 'msheet': this._sheet = 'M' + i; break;
+      case 'leffect': this._call('light', 'turn_on', { entity_id: c.lights[i].entity, effect: el.dataset.v }); break;
       case 'browse': this._sheet = 'B'; if (!this._lib || this._lib.err) this._loadLib('playlist'); break;
       case 'libtab': this._loadLib(el.dataset.t); break;
       case 'libplay': {
