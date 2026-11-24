@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -177,6 +177,13 @@ button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparen
 .tstep{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;background:rgba(255,255,255,.05);border-radius:16px;padding:8px}
 .rb2{border:none;width:48px;height:48px;border-radius:50%;background:#2F2F38;color:#F5F5F7;font-size:24px;flex:none}.rb2[disabled]{opacity:.35}
 .tval{text-align:center;font-size:16px}.tval b{font-size:20px}.tval small{display:block;color:#8E8E93;font-size:13px;margin-top:2px}
+.card.energy{border:none;color:inherit;font:inherit;text-align:left;width:100%;cursor:pointer;position:relative}
+.card.energy .ago{position:absolute;right:16px;top:14px;color:#636366;font-size:22px}
+.estats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.estats div{background:rgba(255,255,255,.05);border-radius:14px;padding:12px 14px}.estats b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.estats span{color:#8E8E93;font-size:13px}
+.ewrap{position:relative;touch-action:none}.echart{width:100%;height:auto;display:block}
+.ehead{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#C7C7CC;margin:8px 0 2px;text-transform:uppercase;letter-spacing:.05em}
+.lg{text-transform:none;letter-spacing:0;color:#C7C7CC;display:flex;align-items:center;gap:6px}.lg i,.etip i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-left:8px}
+.etip{position:absolute;top:30px;left:0;width:170px;background:#2C2C34;border-radius:12px;padding:8px 10px;font-size:13px;opacity:0;pointer-events:none;display:flex;flex-direction:column;gap:3px;box-shadow:0 6px 20px rgba(0,0,0,.4)}.etip i{margin:0 6px 0 0}
 .mctl{display:flex;justify-content:center;gap:18px}.mctl button{border:none;width:64px;height:64px;border-radius:50%;background:#2F2F38;color:#F5F5F7;display:flex;align-items:center;justify-content:center}
 .mnow{font-size:16px;color:#C7C7CC;line-height:1.4}
 .slider{display:flex;flex-direction:column;gap:10px}.slider .sl{display:flex;justify-content:space-between;font-size:15px;color:#A1A1A8}.slider .sl b{color:#F5F5F7;font-variant-numeric:tabular-nums}
@@ -336,7 +343,7 @@ class HomeHubCard extends HTMLElement {
     });
     this.$awake.addEventListener('input', (e) => this._onInput(e));
     this.$awake.addEventListener('pointerdown', (e) => { this._onDialStart(e); this._onSlideStart(e); });
-    this.$awake.addEventListener('pointermove', (e) => { this._onDialMove(e); this._onSlideMove(e); });
+    this.$awake.addEventListener('pointermove', (e) => { if (this._sheet === 'E') this._onEnergyHover(e); this._onDialMove(e); this._onSlideMove(e); });
     ['pointerup', 'pointercancel'].forEach((ev) => this.$awake.addEventListener(ev, () => { this._onDialEnd(); this._onSlideEnd(); }));
     this.$awake.addEventListener('change', (e) => this._onChange(e));
     this.$awake.addEventListener('pointerdown', (e) => this._onHoldStart(e));
@@ -572,6 +579,7 @@ class HomeHubCard extends HTMLElement {
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'L') sheet = this._lightSheet(+this._sheet.slice(1));
     else if (typeof this._sheet === 'string' && this._sheet.charAt(0) === 'M') sheet = this._mediaSheet(+this._sheet.slice(1));
     else if (this._sheet === 'B') sheet = this._browseSheet();
+    else if (this._sheet === 'E') sheet = this._energySheet();
     else if (this._sheet === 'D') sheet = this._dehumSheet();
     else if (this._sheet != null) sheet = this._sheetHtml(this._sheet);
 
@@ -588,13 +596,14 @@ class HomeHubCard extends HTMLElement {
 <div class="grid">
   <div class="col">
     ${alerts.length ? `<button class="card alert" data-act="alertsheet" aria-label="${alerts.length} alert${alerts.length === 1 ? '' : 's'}, show details"><span class="aic">!</span><span class="ab"><div class="an">${alerts.length} alert${alerts.length === 1 ? '' : 's'}</div><div class="as">${this._esc(alerts.map((a) => a.name).join(' · '))}</div></span><span class="ago">›</span></button>` : ''}
-    <div class="card energy">
+    <button class="card energy" data-act="energysheet" aria-label="Energy: show the last 24 hours">
       <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Home battery ${pct ?? '—'} percent"><circle cx="56" cy="56" r="44" fill="none" stroke="#2C2C34" stroke-width="12"/><circle cx="56" cy="56" r="44" fill="none" stroke="${low ? '#FFB340' : '#34C759'}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circ}" transform="rotate(-90 56 56)"/><text x="56" y="56" text-anchor="middle" dominant-baseline="central" fill="#F5F5F7" font-size="26" font-weight="600" font-family="Inter,system-ui">${pct !== null ? Math.round(pct) + '%' : '—'}</text></svg>
       <div class="rows"><div class="label">Energy</div>
         <div class="row"><span>House</span><span>${fmtW(this._num(c.house_power))}</span></div>
         <div class="row"><span>Solar</span><span style="color:#FFD60A">${fmtW(this._num(c.solar_power))}</span></div>
         <div class="row"><span>Battery</span><span>${flow}</span></div></div>
-    </div>
+      <span class="ago">›</span>
+    </button>
     ${low || forcOn ? `<div class="card charge"><div class="h">${ICON.bolt} Battery at ${Math.round(pct)}%</div>
       <p>${forcOn ? 'Charging from the grid. It stops by itself at 80%.' : 'Top up from the grid so there is enough for tonight. It stops by itself at 80%.'}</p>
       <button class="hold ${forcOn ? 'stop' : ''}" data-hold="${forcOn ? 'stop' : 'charge'}"><span class="fill"></span><span>${forcOn ? 'Hold to stop charging' : 'Hold to charge to 80%'}</span></button></div>` : ''}
@@ -721,6 +730,86 @@ class HomeHubCard extends HTMLElement {
       <form class="srch" data-form="lib"><input type="search" placeholder="Search your library" value="${(L.q || '').replace(/"/g, '&quot;')}" data-in="libq" enterkeyhint="search"><button class="chip" type="submit">Search</button></form>
       ${items}
     </div></div>`;
+  }
+  _loadEnergy() {
+    const c = this.config; const ids = [c.house_power, c.solar_power, c.battery].filter(Boolean);
+    const end = new Date(), start = new Date(end.getTime() - 24 * 3600e3);
+    this._hist = { loading: true, at: Date.now() };
+    this._hass.callWS({ type: 'history/history_during_period', start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false })
+      .then((r) => {
+        const B = 144, step = 24 * 3600e3 / B, t0 = start.getTime();
+        const series = (id, mode) => {
+          const rows = (r && r[id]) || []; const pts = rows.map((x) => [((x.lu || x.lc) * 1000) || t0, parseFloat(x.s)]).filter((x) => !isNaN(x[1]));
+          const out = new Array(B).fill(null); let k = 0, last = null;
+          for (let b = 0; b < B; b++) {
+            const bEnd = t0 + (b + 1) * step; let sum = 0, n = 0;
+            while (k < pts.length && pts[k][0] < bEnd) { last = pts[k][1]; sum += last; n++; k++; }
+            out[b] = mode === 'last' ? last : (n ? (sum + (last != null && n === 0 ? last : 0)) / n : last);
+          }
+          return out;
+        };
+        this._hist = { at: Date.now(), t0, step, B, house: series(c.house_power), solar: series(c.solar_power), soc: series(c.battery, 'last') };
+        if (this._sheet === 'E') this._render();
+      })
+      .catch((e) => { this._hist = { at: Date.now(), err: (e && e.message) || 'Could not load history' }; if (this._sheet === 'E') this._render(); });
+  }
+  _energySheet() {
+    const H = this._hist || {};
+    const W = 760, ph = 170, bh = 110, L = 46, Rr = 12;
+    let body;
+    if (H.loading || !H.B) body = `<div class="libmsg">${H.err ? this._esc(H.err) : 'Loading the last 24 hours…'}</div>`;
+    else {
+      const x = (b) => L + (b + 0.5) / H.B * (W - L - Rr);
+      const kw = (v) => v / 1000;
+      const maxP = Math.max(1, ...H.house.concat(H.solar).filter((v) => v != null).map(kw));
+      const top = Math.ceil(maxP);
+      const yP = (v) => 14 + (1 - kw(v) / top) * (ph - 34);
+      const yB = (v) => 10 + (1 - v / 100) * (bh - 30);
+      const path = (arr, y) => { let d = '', pen = false; arr.forEach((v, b) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(b).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; }); return d; };
+      const area = (arr, y, base) => { const pts = arr.map((v, b) => v == null ? null : [x(b), y(v)]).filter(Boolean); if (!pts.length) return ''; return 'M' + pts[0][0].toFixed(1) + ' ' + base + pts.map((p) => 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('') + 'L' + pts[pts.length - 1][0].toFixed(1) + ' ' + base + 'Z'; };
+      const kwh = (arr) => arr.reduce((a, v) => a + (v || 0), 0) * (H.step / 3600e3) / 1000;
+      const socs = H.soc.filter((v) => v != null);
+      const ticks = []; for (let h = 0; h <= 24; h += 6) { const b = h / 24 * H.B - 0.5; const t = new Date(H.t0 + h * 3600e3); ticks.push([L + h / 24 * (W - L - Rr), h === 24 ? 'Now' : t.toTimeString().slice(0, 5)]); }
+      const grid = (n, y0, y1, lab) => { let g = ''; for (let i = 0; i <= n; i++) { const yy = y0 + (y1 - y0) * i / n; g += `<line x1="${L}" x2="${W - Rr}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#2A2A31" stroke-width="1"/><text x="${L - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end" fill="#8E8E93" font-size="11">${lab(i)}</text>`; } return g; };
+      const xt = (hgt) => ticks.map(([tx, l]) => `<text x="${tx.toFixed(1)}" y="${hgt - 4}" text-anchor="middle" fill="#8E8E93" font-size="11">${l}</text>`).join('');
+      this._ehit = { L, W, Rr, B: H.B, t0: H.t0, step: H.step, house: H.house, solar: H.solar, soc: H.soc };
+      body = `<div class="estats"><div><b>${kwh(H.solar).toFixed(1)} kWh</b><span>Solar made</span></div><div><b>${kwh(H.house).toFixed(1)} kWh</b><span>House used</span></div><div><b>${socs.length ? Math.round(Math.min(...socs)) + '–' + Math.round(Math.max(...socs)) + '%' : '—'}</b><span>Battery range</span></div></div>
+        <div class="ewrap" data-echart="1">
+          <div class="ehead"><span>Power</span><span class="lg"><i style="background:#4A8BE0"></i>House <i style="background:#B8811F"></i>Solar</span></div>
+          <svg viewBox="0 0 ${W} ${ph}" class="echart" role="img" aria-label="House consumption and solar generation over the last 24 hours">
+            ${grid(2, 14, ph - 20, (i) => (top - top * i / 2).toFixed(top < 3 ? 1 : 0) + ' kW')}
+            <path d="${area(H.solar, yP, (ph - 20).toFixed(1))}" fill="#B8811F" opacity=".18"/>
+            <path d="${path(H.solar, yP)}" stroke="#B8811F" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            <path d="${path(H.house, yP)}" stroke="#4A8BE0" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            ${xt(ph)}
+            <line data-cx x1="0" x2="0" y1="10" y2="${ph - 20}" stroke="#F5F5F7" stroke-width="1" opacity="0"/>
+          </svg>
+          <div class="ehead"><span>Home battery</span><span class="lg"><i style="background:#34C759"></i>Charge</span></div>
+          <svg viewBox="0 0 ${W} ${bh}" class="echart" role="img" aria-label="Home battery charge over the last 24 hours">
+            ${grid(2, 10, bh - 20, (i) => (100 - 50 * i) + '%')}
+            <path d="${path(H.soc, yB)}" stroke="#34C759" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            ${xt(bh)}
+            <line data-cx x1="0" x2="0" y1="6" y2="${bh - 20}" stroke="#F5F5F7" stroke-width="1" opacity="0"/>
+          </svg>
+          <div class="etip" data-etip></div>
+        </div>`;
+    }
+    return `<div class="scrim" data-act="closesheet"><div class="sheet wide" role="dialog" aria-label="Energy, last 24 hours" data-stop="1">
+      <div class="sh"><div class="tt">Energy · last 24 hours</div><button class="x" data-act="closesheet" aria-label="Close">${ICON.close}</button></div>
+      ${body}
+    </div></div>`;
+  }
+  _onEnergyHover(e) {
+    const wrap = e.target.closest && e.target.closest('[data-echart]'); const g = this._ehit;
+    if (!wrap || !g) return;
+    const svg = wrap.querySelector('svg.echart'); const r = svg.getBoundingClientRect(); const sx = r.width / g.W;
+    const px = (e.clientX - r.left) / sx; let b = Math.floor((px - g.L) / (g.W - g.L - g.Rr) * g.B); b = Math.max(0, Math.min(g.B - 1, b));
+    const xx = g.L + (b + 0.5) / g.B * (g.W - g.L - g.Rr);
+    wrap.querySelectorAll('[data-cx]').forEach((l) => { l.setAttribute('x1', xx); l.setAttribute('x2', xx); l.setAttribute('opacity', '.5'); });
+    const t = new Date(g.t0 + b * g.step); const kwf = (v) => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(2) + ' kW' : Math.round(v) + ' W');
+    const tip = wrap.querySelector('[data-etip]');
+    tip.innerHTML = `<b>${t.toTimeString().slice(0, 5)}</b><span><i style="background:#4A8BE0"></i>House ${kwf(g.house[b])}</span><span><i style="background:#B8811F"></i>Solar ${kwf(g.solar[b])}</span><span><i style="background:#34C759"></i>Battery ${g.soc[b] == null ? '—' : Math.round(g.soc[b]) + '%'}</span>`;
+    tip.style.opacity = '1'; const left = Math.min(Math.max(xx * sx - 80, 0), r.width - 170); tip.style.left = left + 'px';
   }
   _onSlideStart(e) {
     if (e.target.closest('.pw') || e.target.closest('.mini')) return;
@@ -949,6 +1038,7 @@ class HomeHubCard extends HTMLElement {
       case 'csheet': this._sheet = i; break;
       case 'lsheet': this._sheet = 'L' + i; break;
       case 'msheet': this._sheet = 'M' + i; break;
+      case 'energysheet': this._sheet = 'E'; if (!this._hist || this._hist.err || Date.now() - this._hist.at > 300000) this._loadEnergy(); break;
       case 'leffect': this._call('light', 'turn_on', { entity_id: c.lights[i].entity, effect: el.dataset.v }); break;
       case 'browse': this._sheet = 'B'; if (!this._lib || this._lib.err) this._loadLib('playlist'); break;
       case 'libtab': this._loadLib(el.dataset.t); break;
