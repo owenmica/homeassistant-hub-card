@@ -40,3 +40,15 @@ alerts:
     name: Garage camera
     unavailable: true
 ```
+
+## Pausing a light's automation
+
+Give a light a `pause` helper (an `input_boolean`) when an automation switches it on by itself. The tile shows "Off · paused" while it is on, and the light's sheet gets an Automatic / Paused choice. The card only flips the helper; your automation decides what a pause means.
+
+```yaml
+lights:
+  - entity: light.terrace
+    name: Terrace lights
+    timer: timer.terrace_off_timer
+    pause: input_boolean.terrace_lights_auto_paused
+```

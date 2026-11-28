@@ -1,6 +1,6 @@
 /* Home Hub card — sleep screen with live scenes + main dashboard */
 (() => {
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const DEFAULTS = {
   scene_select: 'input_select.hub_scene',
   halloween_style: 'input_select.hub_halloween_style',
@@ -541,7 +541,7 @@ class HomeHubCard extends HTMLElement {
       const on = s.state === 'on';
       const br = s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) + '%' : '';
       const tl = on ? this._timerLeft(l.timer) : 0;
-      const st = s.state === 'unavailable' ? 'Unavailable' : on ? (tl ? 'Off in ' + this._fmtLeft(tl) : 'On' + (br ? ' · ' + br : '')) : 'Off';
+      const st = s.state === 'unavailable' ? 'Unavailable' : on ? (tl ? 'Off in ' + this._fmtLeft(tl) : 'On' + (br ? ' · ' + br : '')) : (this._paused(i) ? 'Off · paused' : 'Off');
       const dim = (s.attributes.supported_color_modes || []).some((m) => m !== 'onoff');
       const pct = on ? (s.attributes.brightness != null ? Math.round(s.attributes.brightness / 2.55) : 100) : 0;
       return `<div class="tile ${dim ? 'stile' : ''} ${on ? (dim ? 'on-light on-dim' : 'on-light') : ''}" ${dim ? `data-slide="light" data-i="${i}"` : ''}>${dim ? `<div class="fillbar" style="width:${pct}%"></div>` : ''}<button class="pw lpw" data-act="ltoggle" data-i="${i}" aria-pressed="${on}" aria-label="${on ? 'Turn off' : 'Turn on'} ${l.name}">${ICON.bulb}</button><button class="body" data-act="lsheet" data-i="${i}"><div class="nm">${l.name}</div><div class="st" data-lvl>${st}</div></button></div>`;
@@ -645,6 +645,15 @@ class HomeHubCard extends HTMLElement {
     if (st && st.state !== 'on') this._call('homeassistant', 'turn_on', { entity_id: l.entity });
     this._call('timer', 'start', { entity_id: l.timer, duration: `${hh}:${mm}:${ss}` });
   }
+  // Optional per-light `pause`: an input_boolean an automation reads to skip switching the light on by itself.
+  _paused(i) { const l = this.config.lights[i]; const p = l && l.pause ? this._st(l.pause) : null; return !!p && p.state === 'on'; }
+  _pauseBlock(i) {
+    const l = this.config.lights[i]; if (!l.pause || !this._st(l.pause)) return '';
+    const p = this._paused(i);
+    return `<div><div class="label" style="margin-bottom:10px">Turns on by itself</div>
+      <div class="chips"><button class="chip ${!p ? 'sel' : ''}" data-act="lpause" data-i="${i}" data-v="off">Automatic</button><button class="chip ${p ? 'sel' : ''}" data-act="lpause" data-i="${i}" data-v="on">Paused</button></div>
+      <div class="prow"><span>${p ? 'Stays off when someone walks in. Turning it on clears the pause.' : 'Switching it off here pauses it.'}</span></div></div>`;
+  }
   _timerBlock(i) {
     const l = this.config.lights[i]; if (!l.timer || !this._st(l.timer)) return '';
     const left = this._timerLeft(l.timer);
@@ -676,6 +685,7 @@ class HomeHubCard extends HTMLElement {
       ${(a.effect_list || []).length ? `<div><div class="label" style="margin-bottom:10px">Effects</div><div class="chips fx">${(l.effects || a.effect_list).map((f) => `<button class="chip ${a.effect === f ? 'sel' : ''}" data-act="leffect" data-i="${i}" data-v="${String(f).replace(/"/g, '&quot;')}">${f === 'none' ? 'No effect' : cap(String(f).replace(/_/g, ' ')).replace(/</g, '&lt;')}</button>`).join('')}</div></div>` : ''}
       ${!canDim && !l.timer ? '<div class="prow"><span>This light can only be switched on and off.</span></div>' : ''}
       ${this._timerBlock(i)}
+      ${this._pauseBlock(i)}
     </div></div>`;
   }
   _mediaSheet(i) {
@@ -1019,6 +1029,7 @@ class HomeHubCard extends HTMLElement {
       case 'scene': this._call('input_select', 'select_option', { entity_id: c.scene_select, option: el.dataset.v }); break;
       case 'ltoggle': { const ent = c.lights[i].entity; this._call(ent.split('.')[0] === 'light' ? 'light' : 'homeassistant', 'toggle', { entity_id: ent }); break; }
       case 'tnone': this._setTimer(i, 0); break;
+      case 'lpause': { const pe = c.lights[i].pause; if (pe) this._call('input_boolean', el.dataset.v === 'on' ? 'turn_on' : 'turn_off', { entity_id: pe }); break; }
       case 'tset': this._setTimer(i, +el.dataset.h * 3600000); break;
       case 'tplus': { const left = this._timerLeft(c.lights[i].timer); this._setTimer(i, (left ? left : 0) + 3600000); break; }
       case 'tminus': { const left = this._timerLeft(c.lights[i].timer); this._setTimer(i, left - 3600000); break; }
